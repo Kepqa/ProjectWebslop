@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { Hud } from './hud';
+import { Hud, type DevAction } from './hud';
+import { fetchStats, isDev } from './stats';
 import { sfx, type SfxName } from './sfx';
 import { session } from './session';
 import { SnapWriter, ZF, type Msg, type Net } from './net';
@@ -34,7 +35,7 @@ export const SWIPE_MIN_SPEED = 0.45; // CSS px/мс — медленнее не 
 export const SWIPE_COST = 0.035; // энергии на CSS-пиксель
 export const SLAM_R = 180;
 export const BOMB_R = 105;
-const RUNE_COST = 12;
+const RUNE_COST = 18;
 const CELL = 64;
 const MAX_ZOMBIES = 550;
 const BLADE_KNOCK = 260;
@@ -49,6 +50,7 @@ export interface Player extends Body {
   energy: number; levels: Levels; stats: Stats;
   alive: boolean; downT: number; phoenixUsed: boolean; bellCd: number; grenadeT: number; boomCd: number; crossCd: number;
   boneImgs: Phaser.GameObjects.Image[]; boneAngle: number; auraTick: number; killsForHeal: number; onToxic: boolean; toxicTick: number;
+  runeAt: number;
   field: FlowField; fTx: number; fTy: number; fAt: number;
 }
 
@@ -124,6 +126,7 @@ export class GameScene extends Phaser.Scene {
   private trailG!: Phaser.GameObjects.Graphics;
   private fxG!: Phaser.GameObjects.Graphics;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
+  private god = false; private infEnergy = false; private showFps = false; private fpsAt = 0; private devBoss = 0;
 
   constructor() { super('game'); }
 
@@ -154,6 +157,9 @@ export class GameScene extends Phaser.Scene {
     this.hud.show(this.coop);
     this.hud.setBoss(null);
     this.hud.onPause = () => this.requestPause();
+    this.god = false; this.infEnergy = false; this.showFps = false; this.devBoss = 0;
+    this.hud.setFps(null);
+    this.hud.setDev(isDev() ? this.devActions() : null);
 
     this.players = [this.makePlayer(0, false)];
     if (this.coop) this.players.push(this.makePlayer(1, true));
@@ -199,7 +205,7 @@ export class GameScene extends Phaser.Scene {
       idx, remote, x, y, lvl: 0, img: this.add.image(x, y, idx === 0 ? 'player' : 'player2').setScale(1 / S).setDepth(5).setOrigin(22 / 46, 0.5),
       hp: stats.maxHp, inv: 0, hurtT: 0, moving: 0, bob: 0, rot: 0, energy: stats.energyMax, levels, stats,
       alive: true, downT: 0, phoenixUsed: false, bellCd: 0, grenadeT: 0, boomCd: 0, crossCd: 0,
-      boneImgs: [], boneAngle: 0, auraTick: 0, killsForHeal: 0, onToxic: false, toxicTick: 0,
+      boneImgs: [], boneAngle: 0, auraTick: 0, killsForHeal: 0, onToxic: false, toxicTick: 0, runeAt: -99,
       field: new FlowField(), fTx: 1e9, fTy: 1e9, fAt: -1,
     };
   }
@@ -652,6 +658,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private checkRune(s: Stroke) {
+    if (s.owner.stats.runeMult <= 0) return; // печать — только после апгрейда
     const pts = s.pts;
     const n = pts.length;
     if (n > 400 || n - s.loopStart < 10) return;
@@ -662,9 +669,11 @@ export class GameScene extends Phaser.Scene {
       if (polyArea(poly) < 3500) continue;
       s.loopStart = n;
       const pl = s.owner;
+      if (this.elapsed - pl.runeAt < pl.stats.runeCd) { if (pl === this.me) this.hud.toast('Печать перезаряжается', 700); return; }
       const cost = RUNE_COST * pl.stats.costMul;
       if (pl.energy < cost) { if (pl === this.me) this.hud.energyEmpty(); return; }
       pl.energy -= cost;
+      pl.runeAt = this.elapsed;
       this.castRune(poly, pl);
       return;
     }
@@ -787,7 +796,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private hurt(p: Player, amount: number) {
-    if (p.inv > 0 || this.over || !p.alive) return;
+    if (p.inv > 0 || this.over || !p.alive || this.god) return;
     p.hp -= amount;
     p.inv = 0.6; p.hurtT = 0.25;
     this.burst('gore', 6, p.x, p.y);
@@ -870,7 +879,7 @@ export class GameScene extends Phaser.Scene {
     if (t >= this.nextHorde && t < this.stageTime - 20) {
       this.nextHorde += 45;
       this.hordeN++;
-      this.toast('🧟 ОРДА! Держи проход или обведи печатью!');
+      this.toast('🧟 ОРДА! Держи узкий проход!');
       for (const pl of this.alivePlayers()) {
         const n = 26 + this.hordeN * 8;
         for (let i = 0; i < n; i++) {
@@ -948,6 +957,10 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, deltaMs: number) {
     const dt = Math.min(deltaMs, 50) / 1000;
     const now = performance.now();
+    if (this.showFps && now - this.fpsAt > 500) {
+      this.fpsAt = now;
+      this.hud.setFps(`${Math.round(this.game.loop.actualFps)} fps · ${this.zombies.length} z`);
+    }
     if (this.coop && now - this.snapAt >= SNAP_MS) { this.snapAt = now; this.sendSnapshot(); }
     if (this.paused || this.over) { this.draw(); return; }
     if (this.hitstop > 0) { this.hitstop -= dt; this.draw(); return; }
@@ -958,6 +971,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.moveLocal(dt);
+    if (this.infEnergy) for (const p of this.players) p.energy = p.stats.energyMax;
     for (const p of this.players) this.tickPlayer(p, dt);
     for (const p of this.players) this.updateField(p);
     this.fieldDirty = false;
@@ -971,7 +985,7 @@ export class GameScene extends Phaser.Scene {
     this.burnTrails(dt);
     this.collectGems(dt);
     this.zombies = this.zombies.filter((z) => !z.dead);
-    if (this.elapsed - this.chunkAt > 0.25) { this.chunkAt = this.elapsed; this.chunks.update(this.me.x, this.me.y); }
+    if (this.elapsed - this.chunkAt > 0.12) { this.chunkAt = this.elapsed; this.chunks.update(this.me.x, this.me.y); }
 
     this.checkDeaths(dt);
     if (this.over) return;
@@ -1039,7 +1053,7 @@ export class GameScene extends Phaser.Scene {
     if (p.alive) p.energy = Math.min(p.stats.energyMax, p.energy + p.stats.energyRegen * dt);
     p.onToxic = p.alive && this.world.kindAtPx(p.x, p.y) === K_TOXIC;
     if (p.onToxic) {
-      p.hp -= 6 * this.stage.dmgMul * dt;
+      if (!this.god) p.hp -= 6 * this.stage.dmgMul * dt;
       p.toxicTick -= dt;
       if (p.toxicTick <= 0) { p.toxicTick = 0.15; this.burst('acid', 1, p.x, p.y); }
     }
@@ -1534,7 +1548,7 @@ export class GameScene extends Phaser.Scene {
     const pool = UPGRADES.filter((u) => (p.levels[u.id] ?? 0) < u.max);
     const choices: UpgradeDef[] = [];
     while (choices.length < 3 && pool.length) {
-      const weights = pool.map((u) => (u.kind === 'swipe' ? 3 : 1) * ((p.levels[u.id] ?? 0) > 0 ? 1.5 : 1));
+      const weights = pool.map((u) => (u.id === 'rune' ? 1.2 : u.kind === 'swipe' ? 3 : 1) * ((p.levels[u.id] ?? 0) > 0 ? 1.5 : 1));
       let r = Math.random() * weights.reduce((a, b) => a + b, 0);
       let i = 0;
       while ((r -= weights[i]) > 0) i++;
@@ -1632,6 +1646,46 @@ export class GameScene extends Phaser.Scene {
   private restart(stage: number) {
     if (this.coop) this.game.events.emit('coop-start', stage);
     else this.scene.restart({ stage });
+  }
+
+  // ---------- Режим разработчика ----------
+  private devActions(): DevAction[] {
+    const allBosses: ZType[] = ['colossus', 'brood', 'leaper', 'necro'];
+    const spawnN = (type: ZType, n: number) => () => {
+      for (let i = 0; i < n; i++) this.spawnZombie(type, { at: { x: this.me.x + Math.cos(i) * 220, y: this.me.y + Math.sin(i) * 220 }, around: this.me });
+    };
+    const refreshStats = () => {
+      this.hud.setDevStats('Загружаем статистику…');
+      void fetchStats().then((st) => {
+        const f = (v: number | null | undefined) => (v === null || v === undefined ? 'нет связи' : String(v));
+        this.hud.setDevStats(`Уникальных игроков: ${f(st.users)}\nЗабегов: ${f(st.runs)} (из них кооп: ${f(st.coop)})`);
+      });
+    };
+    refreshStats();
+    return [
+      { label: () => `Бессмертие`, fn: () => { this.god = !this.god; }, on: () => this.god },
+      { label: () => `Энергия ∞`, fn: () => { this.infEnergy = !this.infEnergy; }, on: () => this.infEnergy },
+      { label: 'Лечение', fn: () => { for (const p of this.players) { p.hp = p.stats.maxHp; if (!p.alive) this.revive(p, false); } } },
+      { label: () => 'FPS', fn: () => { this.showFps = !this.showFps; if (!this.showFps) this.hud.setFps(null); }, on: () => this.showFps },
+      { label: '+1 уровень', fn: () => this.gainXp(this.xpNext() - this.xp + 0.01) },
+      { label: 'Сундук', fn: () => this.openChest(this.me) },
+      { label: 'Все апгрейды макс', fn: () => { for (const u of UPGRADES) while ((this.me.levels[u.id] ?? 0) < u.max) this.applyUpgrade(this.me, u.id); } },
+      { label: 'Сброс апгрейдов', fn: () => { this.me.levels = {}; this.me.stats = computeStats({}); this.me.hp = Math.min(this.me.hp, this.me.stats.maxHp); this.hud.setItems({}); } },
+      { label: 'Босс уровня', fn: () => { const t = this.stage.bosses[this.devBoss++ % this.stage.bosses.length]; this.spawnZombie(t, { extra: -200, around: this.me }); } },
+      { label: () => `Босс: ${ZDEF[allBosses[this.devBoss % 4]].boss}`, fn: () => { this.spawnZombie(allBosses[this.devBoss++ % 4], { extra: -200, around: this.me }); } },
+      { label: 'Орда', fn: () => { this.nextHorde = this.elapsed; } },
+      { label: 'Убить всех', fn: () => { for (const z of this.zombies) if (!z.dead) this.kill(z); } },
+      { label: '+10 прыгунов', fn: spawnN('jumper', 10) },
+      { label: '+10 подрывников', fn: spawnN('bomber', 10) },
+      { label: '+10 щитоносцев', fn: spawnN('shield', 10) },
+      { label: '+10 призраков', fn: spawnN('ghost', 10) },
+      { label: '+5 таранов', fn: spawnN('charger', 5) },
+      { label: '+5 плевунов', fn: spawnN('spitter', 5) },
+      { label: '+1 минута', fn: () => { this.elapsed += 60; } },
+      { label: 'К Стражу (−1:31)', fn: () => { this.elapsed = Math.max(this.elapsed, this.stageTime - 91); } },
+      { label: 'Победа', fn: () => { if (!this.over) this.victory(); } },
+      { label: 'Статистика ↻', fn: refreshStats },
+    ];
   }
 
   // ---------- Отрисовка ----------

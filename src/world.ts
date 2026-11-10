@@ -316,7 +316,7 @@ export class World {
  * nxt[i] — следующий тайл по кратчайшему пути.
  */
 export class FlowField {
-  static readonly N = 112;
+  static readonly N = 96;
   static INF = 1 << 30;
   ox = 0; oy = 0;
   private dist = new Int32Array(FlowField.N ** 2);
@@ -450,7 +450,9 @@ function shade(c: number, f: number) {
   return (r << 16) | (g << 8) | b;
 }
 
+/** Рисует чанк в локальных координатах (0..CPX) — результат запекается в текстуру. */
 export function drawChunk(g: Phaser.GameObjects.Graphics, world: World, cx: number, cy: number, P: Palette) {
+  const ox = cx * CPX, oy = cy * CPX;
   const r = mulberry32(hash(cx, cy, 99));
   const T = TILE;
   const lvl = (tx: number, ty: number) => (world.kind(tx, ty) === K_RAMP ? world.height(tx, ty) + 0.5 : world.height(tx, ty));
@@ -458,7 +460,7 @@ export function drawChunk(g: Phaser.GameObjects.Graphics, world: World, cx: numb
 
   // Пол, плато, пандусы, пропасти, лужи
   for (let y = 0; y < CH; y++) for (let x = 0; x < CH; x++) {
-    const tx = cx * CH + x, ty = cy * CH + y, px = tx * T, py = ty * T;
+    const tx = cx * CH + x, ty = cy * CH + y, px = tx * T - ox, py = ty * T - oy;
     const k = world.kind(tx, ty), h = world.height(tx, ty);
     if (k === K_RAMP) {
       g.fillStyle(P.ramp[Math.min(h, 1)]).fillRect(px, py, T, T);
@@ -503,7 +505,7 @@ export function drawChunk(g: Phaser.GameObjects.Graphics, world: World, cx: numb
 
   // Обрывы: южная стенка, кромки, тени у подножия
   for (let y = 0; y < CH; y++) for (let x = 0; x < CH; x++) {
-    const tx = cx * CH + x, ty = cy * CH + y, px = tx * T, py = ty * T;
+    const tx = cx * CH + x, ty = cy * CH + y, px = tx * T - ox, py = ty * T - oy;
     const k = world.kind(tx, ty);
     if (k === K_RAMP || k === K_PIT) continue;
     const h = world.height(tx, ty);
@@ -524,7 +526,7 @@ export function drawChunk(g: Phaser.GameObjects.Graphics, world: World, cx: numb
 
   // Стены (псевдо-3D блоки)
   for (let y = 0; y < CH; y++) for (let x = 0; x < CH; x++) {
-    const tx = cx * CH + x, ty = cy * CH + y, px = tx * T, py = ty * T;
+    const tx = cx * CH + x, ty = cy * CH + y, px = tx * T - ox, py = ty * T - oy;
     if (world.kind(tx, ty) !== K_WALL) continue;
     const below = world.kind(tx, ty + 1) === K_WALL;
     g.fillStyle(0x000000, 0.3).fillRect(px + 4, py + 6, T, T);

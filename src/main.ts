@@ -6,6 +6,7 @@ import { Net, type Msg } from './net';
 import { session } from './session';
 import { sfx } from './sfx';
 import { STAGES, loadProgress } from './stages';
+import { fetchStats, isDev, trackRun, trackVisit } from './stats';
 
 // Рендерим в физическом разрешении экрана (до 2x), чтобы на retina было чётко
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -23,7 +24,7 @@ function renderStages() {
   wrap.innerHTML = '';
   STAGES.forEach((st, i) => {
     const b = document.createElement('button');
-    const locked = i > p.unlocked;
+    const locked = i > p.unlocked && !isDev();
     b.className = `stage s${i + 1}`;
     // гость ждёт выбора хоста; хост без напарника не может стартовать кооп
     b.disabled = locked || lobby === 'joined' || lobby === 'joining' || lobby === 'hosting';
@@ -99,7 +100,7 @@ function showMenu(leaveRoom: boolean) {
   $('start').classList.remove('hidden');
 }
 
-function startSolo(stage: number) { runScene('game', { stage }); }
+function startSolo(stage: number) { trackRun('solo'); runScene('game', { stage }); }
 
 function startCoopHost(stage: number) {
   const net = session.net;
@@ -107,6 +108,7 @@ function startCoopHost(stage: number) {
   const seed = (Math.random() * 1e9) | 0;
   const time = Number(new URLSearchParams(location.search).get('time')) || undefined;
   net.send({ t: 'start', stage, seed, time });
+  trackRun('coop');
   runScene('game', { stage, seed, coop: true });
 }
 
@@ -199,6 +201,37 @@ muteBtn.addEventListener('click', () => {
 for (const ev of ['touchend', 'click', 'keydown']) document.addEventListener(ev, () => sfx.unlock(), { passive: true });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) sfx.unlock(); });
 
+// ---------- Режим разработчика: 5 нажатий на заголовок → код ----------
+const DEV_CODE = 'ZOMBIDEV';
+let titleTaps = 0, titleAt = 0;
+function renderDevInfo() {
+  const el = $('dev-info');
+  el.classList.toggle('hidden', !isDev());
+  if (!isDev()) return;
+  el.textContent = '🛠 Режим разработчика: все уровни открыты, в игре — кнопка 🛠';
+  void fetchStats().then((st) => {
+    if (st.users !== null && st.users !== undefined) el.textContent += ` · игроков: ${st.users}, забегов: ${st.runs ?? '?'}`;
+  });
+}
+$('title').addEventListener('click', () => {
+  const now = performance.now();
+  titleTaps = now - titleAt < 1500 ? titleTaps + 1 : 1;
+  titleAt = now;
+  if (titleTaps < 5) return;
+  titleTaps = 0;
+  if (isDev()) {
+    if (confirm('Выключить режим разработчика?')) localStorage.removeItem('ss_dev');
+  } else {
+    const code = prompt('Код разработчика:');
+    if (code === null) return;
+    if (code.trim().toUpperCase() === DEV_CODE) localStorage.setItem('ss_dev', '1');
+    else { alert('Неверный код'); return; }
+  }
+  renderDevInfo(); renderStages();
+});
+
+trackVisit();
+renderDevInfo();
 setLobby('idle');
 // Блокируем жесты Safari (зум щипком, двойной тап)
 document.addEventListener('gesturestart', (e) => e.preventDefault());

@@ -21,6 +21,8 @@
       <span id="time">0:00</span>
       <span>💀 <b id="kills">0</b></span>
       <span>Ур. <b id="level">1</b></span>
+      <span id="fps" class="hidden"></span>
+      <button id="dev-btn" class="hudbtn hidden" aria-label="Разработчик">🛠</button>
       <button id="pause" class="hudbtn" aria-label="Пауза">⏸</button>
       <button id="mute" class="hudbtn" aria-label="Звук">🔊</button>
     </div>
@@ -30,6 +32,7 @@
   </div>
 
   <div id="joy-base"></div><div id="joy-knob"></div>
+  <div id="dev-panel" class="hidden"><div id="dev-stats"></div><div id="dev-buttons"></div></div>
   <div id="toast"></div>
   <div id="wait" class="hidden"></div>
   <div id="countdown" class="hidden"></div>
@@ -52,11 +55,12 @@
   </div>
 
   <div id="start" class="overlay">
-    <h1>Swipe Survivors</h1>
+    <h1 id="title">Swipe Survivors</h1>
+    <div id="dev-info" class="hidden"></div>
     <ul class="howto">
       <li><b>Движение:</b> джойстик слева (в портрете — внизу слева) или WASD</li>
       <li><b>Удар:</b> быстрый свайп режет зомби, ящики, могилы и снаряды. Медленный — не режет</li>
-      <li><b>Печать:</b> обведи толпу замкнутым кругом — мощный урон всем внутри</li>
+      <li><b>Апгрейды:</b> на каждом уровне героя выбирай улучшение свайпа или тринкет — например, печать круга</li>
       <li><b>Рельеф:</b> на возвышенность ведут только пандусы. Прыгуны запрыгивают сами</li>
       <li>Продержись <b>10 минут</b>, чтобы пройти уровень и открыть следующий</li>
     </ul>

@@ -413,7 +413,7 @@ export class ClientScene extends Phaser.Scene {
       img.setPosition(p.x + p.vx * ex, p.y + p.vy * ex).setRotation(img.rotation + dt * 8);
     });
 
-    if (now - this.chunkAt > 250) { this.chunkAt = now; this.chunks.update(me.x, me.y); }
+    if (now - this.chunkAt > 120) { this.chunkAt = now; this.chunks.update(me.x, me.y); }
     this.draw();
   }
 

@@ -167,3 +167,16 @@ button:active { transform: translateY(2px); box-shadow: 0 2px 0 #000; }
   #countdown { font-size: 80px; }
   button { font-size: 18px; padding: 10px 30px; }
 }
+
+/* ---------- Режим разработчика ---------- */
+#dev-info { font-size: 13px; color: #ffa94d; margin-top: -8px; }
+#fps { font-size: 12px; color: #69db7c; font-family: ui-monospace, monospace; }
+#dev-panel {
+  position: fixed; right: calc(env(safe-area-inset-right) + 8px); top: calc(env(safe-area-inset-top) + 90px); z-index: 35;
+  width: min(300px, 70vw); max-height: 70vh; overflow-y: auto; touch-action: pan-y;
+  background: #111c; border: 2px solid #ffa94d; border-radius: 12px; padding: 8px;
+}
+#dev-stats { font-size: 12px; color: #ffd8a8; margin-bottom: 6px; white-space: pre-line; }
+#dev-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+#dev-buttons button { font-size: 12px; font-weight: 700; padding: 6px 4px; border-width: 2px; border-radius: 8px; box-shadow: none; background: #343a40; color: #fff; }
+#dev-buttons button.on { background: #e8590c; }

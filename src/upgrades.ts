@@ -27,6 +27,7 @@ export interface Stats {
   frostDur: number;
   frostSlow: number;
   runeMult: number;
+  runeCd: number;
   auraRadius: number;
   auraDps: number;
   bones: number;
@@ -76,9 +77,10 @@ export const UPGRADES: UpgradeDef[] = [
     desc: (l) => l === 1 ? 'Через 0.3с призрачный клинок повторяет ваш свайп (55% урона)'
       : '+20% урона эха' },
   { id: 'frost', kind: 'swipe', icon: '❄️', name: 'Ледяная кромка', max: 4,
-    desc: () => 'Задетые свайпом и печатью зомби замедляются сильнее и дольше' },
-  { id: 'rune', kind: 'swipe', icon: '🔮', name: 'Мастер печатей', max: 5,
-    desc: () => 'Обведи зомби кругом: урон печати +150%' },
+    desc: () => 'Задетые зомби замедляются сильнее и дольше' },
+  { id: 'rune', kind: 'swipe', icon: '🔮', name: 'Печать круга', max: 4,
+    desc: (l) => l === 1 ? 'Открывает печать: обведи зомби замкнутым кругом — урон всем внутри (перезарядка 3с)'
+      : '+50% урона печати, перезарядка на 0.4с короче' },
   { id: 'momentum', kind: 'swipe', icon: '💨', name: 'Инерция', max: 4,
     desc: () => 'Чем резче свайп, тем больнее: до +30% урона за уровень у самых быстрых взмахов' },
   { id: 'rend', kind: 'swipe', icon: '🩸', name: 'Рваные раны', max: 4,
@@ -139,7 +141,8 @@ export function computeStats(l: Levels): Stats {
     echoMul: v('echo') ? 0.35 + 0.2 * v('echo') : 0,
     frostDur: 0.8 + 0.5 * v('frost'),
     frostSlow: Math.max(0.2, 0.75 - 0.13 * v('frost')),
-    runeMult: 3 * (1 + 1.5 * v('rune')),
+    runeMult: v('rune') ? 2 + 1 * (v('rune') - 1) : 0,
+    runeCd: 3.4 - 0.4 * v('rune'),
     auraRadius: v('censer') ? 60 + 15 * v('censer') : 0,
     auraDps: 3 * v('censer'),
     bones: v('bones'),

@@ -2,6 +2,8 @@ import { UPGRADES, type Levels, type UpgradeDef } from './upgrades';
 
 const $ = (id: string) => document.getElementById(id)!;
 
+export interface DevAction { label: string | (() => string); fn: () => void; on?: () => boolean }
+
 export class Hud {
   private hpFill = $('hp-fill');
   private hpText = $('hp-text');
@@ -24,10 +26,40 @@ export class Hud {
   private joyState = '';
 
   onPause: () => void = () => {};
+  private devActions: DevAction[] = [];
   private voteTimer = 0;
 
   constructor() {
     $('pause').onclick = () => this.onPause();
+    $('dev-btn').onclick = () => { $('dev-panel').classList.toggle('hidden'); this.renderDev(); };
+  }
+
+  /** Панель разработчика (null — скрыть кнопку). */
+  setDev(actions: DevAction[] | null) {
+    this.devActions = actions ?? [];
+    $('dev-btn').classList.toggle('hidden', !actions);
+    if (!actions) $('dev-panel').classList.add('hidden');
+    else this.renderDev();
+  }
+
+  setDevStats(text: string) { $('dev-stats').textContent = text; }
+
+  private renderDev() {
+    const wrap = $('dev-buttons');
+    wrap.innerHTML = '';
+    for (const a of this.devActions) {
+      const b = document.createElement('button');
+      b.textContent = typeof a.label === 'function' ? a.label() : a.label;
+      if (a.on?.()) b.classList.add('on');
+      b.onclick = () => { a.fn(); this.renderDev(); };
+      wrap.appendChild(b);
+    }
+  }
+
+  setFps(text: string | null) {
+    const el = $('fps');
+    el.classList.toggle('hidden', text === null);
+    if (text !== null) el.textContent = text;
   }
 
   show(coop = false) {
@@ -38,7 +70,7 @@ export class Hud {
   }
 
   closeModals() {
-    for (const id of ['pause-ov', 'vote', 'wait', 'countdown']) $(id).classList.add('hidden');
+    for (const id of ['pause-ov', 'vote', 'wait', 'countdown', 'dev-panel']) $(id).classList.add('hidden');
     clearInterval(this.voteTimer);
   }
 
