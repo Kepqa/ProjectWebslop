@@ -16,7 +16,37 @@ export class Hud {
   private toastTimer = 0;
   private last = '';
 
+  private bossEl = $('boss');
+  private bossName = $('boss-name');
+  private bossFill = $('boss-fill');
+  private joyBase = $('joy-base');
+  private joyKnob = $('joy-knob');
+  private joyState = '';
+
   show() { $('hud').classList.remove('hidden'); }
+
+  setBoss(name: string | null, frac = 0) {
+    if (!name) { this.bossEl.classList.add('hidden'); return; }
+    this.bossEl.classList.remove('hidden');
+    if (this.bossName.textContent !== name) this.bossName.textContent = name;
+    this.bossFill.style.width = `${Math.max(0, frac) * 100}%`;
+  }
+
+  /** Джойстик в CSS-пикселях. mode: 'active' — зажат, 'hint' — подсказка, null — скрыт. */
+  setJoystick(mode: 'active' | 'hint' | null, bx = 0, by = 0, kx = 0, ky = 0, R = 60) {
+    const st = `${mode}|${bx | 0}|${by | 0}|${kx | 0}|${ky | 0}|${R | 0}`;
+    if (st === this.joyState) return;
+    this.joyState = st;
+    if (!mode) { this.joyBase.style.display = 'none'; this.joyKnob.style.display = 'none'; return; }
+    this.joyBase.style.display = 'block';
+    this.joyBase.className = mode;
+    Object.assign(this.joyBase.style, { left: `${bx - R}px`, top: `${by - R}px`, width: `${R * 2}px`, height: `${R * 2}px` });
+    if (mode === 'active') {
+      const k = R * 0.45;
+      this.joyKnob.style.display = 'block';
+      Object.assign(this.joyKnob.style, { left: `${kx - k}px`, top: `${ky - k}px`, width: `${k * 2}px`, height: `${k * 2}px` });
+    } else this.joyKnob.style.display = 'none';
+  }
 
   update(s: { hp: number; maxHp: number; energy: number; energyMax: number; xp: number; xpNext: number; time: number; kills: number; level: number }) {
     const key = [Math.ceil(s.hp), s.maxHp, Math.round(s.energy), s.energyMax, Math.floor(s.xp), s.xpNext, Math.floor(s.time), s.kills, s.level].join('|');
