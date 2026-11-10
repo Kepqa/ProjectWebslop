@@ -21,7 +21,8 @@
       <span id="time">0:00</span>
       <span>💀 <b id="kills">0</b></span>
       <span>Ур. <b id="level">1</b></span>
-      <button id="mute" aria-label="Звук">🔊</button>
+      <button id="pause" class="hudbtn" aria-label="Пауза">⏸</button>
+      <button id="mute" class="hudbtn" aria-label="Звук">🔊</button>
     </div>
     <div class="items" id="items"></div>
     <div class="bar xp"><div class="fill" id="xp-fill"></div></div>
@@ -30,6 +31,20 @@
 
   <div id="joy-base"></div><div id="joy-knob"></div>
   <div id="toast"></div>
+  <div id="wait" class="hidden"></div>
+  <div id="countdown" class="hidden"></div>
+
+  <div id="pause-ov" class="overlay hidden">
+    <h2>Пауза</h2>
+    <p id="pause-note"></p>
+    <div class="end-buttons"><button id="pause-resume">Продолжить</button><button id="pause-exit" class="secondary">Выйти в меню</button></div>
+  </div>
+
+  <div id="vote" class="hidden">
+    <div id="vote-text"></div>
+    <div class="bar"><div class="fill" id="vote-fill"></div></div>
+    <div class="vote-buttons"><button id="vote-yes">Принять</button><button id="vote-no" class="secondary">Отклонить</button></div>
+  </div>
 
   <div id="levelup" class="overlay hidden">
     <h2>Новый уровень!</h2>
@@ -46,6 +61,17 @@
       <li>Продержись <b>10 минут</b>, чтобы пройти уровень и открыть следующий</li>
     </ul>
     <div class="stages" id="stages"></div>
+    <div class="coop">
+      <div class="coop-title">Кооп по сети — каждый со своего устройства</div>
+      <div class="coop-row" id="coop-idle">
+        <button id="coop-host" class="secondary">Создать комнату</button>
+        <span class="coop-or">или</span>
+        <input id="coop-code" maxlength="5" placeholder="КОД" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+        <button id="coop-join" class="secondary">Войти</button>
+      </div>
+      <div id="coop-status" class="hidden"></div>
+      <button id="coop-cancel" class="secondary small hidden">Отмена</button>
+    </div>
   </div>
 
   <div id="end" class="overlay hidden">

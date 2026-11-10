@@ -23,13 +23,69 @@ export class Hud {
   private joyKnob = $('joy-knob');
   private joyState = '';
 
-  show() {
+  onPause: () => void = () => {};
+  private voteTimer = 0;
+
+  constructor() {
+    $('pause').onclick = () => this.onPause();
+  }
+
+  show(coop = false) {
     $('hud').classList.remove('hidden');
+    $('hud').classList.toggle('coop', coop);
     for (const id of ['levelup', 'end']) $(id).classList.add('hidden');
+    this.closeModals();
+  }
+
+  closeModals() {
+    for (const id of ['pause-ov', 'vote', 'wait', 'countdown']) $(id).classList.add('hidden');
+    clearInterval(this.voteTimer);
+  }
+
+  showPause(onResume: () => void, onExit: () => void, note = '') {
+    $('pause-note').textContent = note;
+    $('pause-resume').onclick = () => onResume();
+    $('pause-exit').onclick = () => onExit();
+    $('pause-ov').classList.remove('hidden');
+  }
+  hidePause() { $('pause-ov').classList.add('hidden'); }
+
+  /** Голосование «напарник просит паузу» с автоотказом по таймеру. */
+  showVote(text: string, sec: number, cb: (ok: boolean) => void) {
+    const el = $('vote');
+    $('vote-text').textContent = text;
+    const fill = $('vote-fill');
+    let done = false;
+    const finish = (ok: boolean) => { if (done) return; done = true; clearInterval(this.voteTimer); el.classList.add('hidden'); cb(ok); };
+    $('vote-yes').onclick = () => finish(true);
+    $('vote-no').onclick = () => finish(false);
+    const t0 = performance.now();
+    clearInterval(this.voteTimer);
+    this.voteTimer = window.setInterval(() => {
+      const k = 1 - (performance.now() - t0) / (sec * 1000);
+      fill.style.width = `${Math.max(0, k) * 100}%`;
+      if (k <= 0) finish(false);
+    }, 50);
+    el.classList.remove('hidden');
+  }
+
+  showWait(text: string | null) {
+    const el = $('wait');
+    if (!text) { el.classList.add('hidden'); return; }
+    el.textContent = text; el.classList.remove('hidden');
+  }
+
+  showCountdown(n: number | null) {
+    const el = $('countdown');
+    if (n === null) { el.classList.add('hidden'); return; }
+    el.textContent = String(n);
+    el.classList.remove('hidden');
+    el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
   }
   hide() {
     $('hud').classList.add('hidden');
     for (const id of ['levelup', 'end']) $(id).classList.add('hidden');
+    this.closeModals();
     this.setJoystick(null);
   }
 
@@ -110,16 +166,17 @@ export class Hud {
     wrap.classList.remove('hidden');
   }
 
-  showEnd(o: { title: string; text: string; primary: { label: string; fn: () => void }; secondary: { label: string; fn: () => void }; win?: boolean }) {
+  showEnd(o: { title: string; text: string; primary: { label: string; fn: () => void } | null; secondary: { label: string; fn: () => void }; win?: boolean }) {
     const el = $('end');
     $('end-title').textContent = o.title;
     $('end-title').className = o.win ? 'win' : '';
     $('end-stats').innerHTML = o.text;
     const b1 = $('end-primary') as HTMLButtonElement, b2 = $('end-secondary') as HTMLButtonElement;
-    b1.textContent = o.primary.label; b2.textContent = o.secondary.label;
+    b1.classList.toggle('hidden', !o.primary);
+    b1.textContent = o.primary?.label ?? ''; b2.textContent = o.secondary.label;
     b1.disabled = b2.disabled = true;
     setTimeout(() => (b1.disabled = b2.disabled = false), 600);
-    b1.onclick = () => { el.classList.add('hidden'); o.primary.fn(); };
+    b1.onclick = () => { el.classList.add('hidden'); o.primary?.fn(); };
     b2.onclick = () => { el.classList.add('hidden'); o.secondary.fn(); };
     el.classList.remove('hidden');
   }

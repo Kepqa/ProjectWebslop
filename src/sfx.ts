@@ -5,13 +5,13 @@
  *  - громкость частых звуков падает с плотностью событий;
  *  - всё идёт через компрессор/лимитер.
  */
-type Name =
+export type SfxName =
   | 'swipe' | 'hit' | 'kill' | 'gem' | 'chest' | 'level' | 'hurt' | 'explode' | 'rune' | 'boss' | 'jump' | 'land'
   | 'crate' | 'spit' | 'clank' | 'fall' | 'win' | 'lose' | 'fuse' | 'slice' | 'zap' | 'throw' | 'bell';
 
 interface Lim { gap: number; voices: number }
 
-const LIMITS: Record<Name, Lim> = {
+const LIMITS: Record<SfxName, Lim> = {
   swipe: { gap: 0.06, voices: 2 }, hit: { gap: 0.035, voices: 3 }, kill: { gap: 0.05, voices: 3 },
   gem: { gap: 0.045, voices: 2 }, chest: { gap: 0.3, voices: 1 }, level: { gap: 0.5, voices: 1 },
   hurt: { gap: 0.15, voices: 1 }, explode: { gap: 0.09, voices: 2 }, rune: { gap: 0.2, voices: 1 },
@@ -26,9 +26,9 @@ class Sfx {
   private ctx: AudioContext | null = null;
   private out!: GainNode;
   private noise!: AudioBuffer;
-  private last = new Map<Name, number>();
-  private voices = new Map<Name, number>();
-  private recent = new Map<Name, number[]>();
+  private last = new Map<SfxName, number>();
+  private voices = new Map<SfxName, number>();
+  private recent = new Map<SfxName, number[]>();
   private gemPitch = 0; private gemAt = 0;
   muted = false;
 
@@ -36,8 +36,24 @@ class Sfx {
     try { this.muted = localStorage.getItem('ss_muted') === '1'; } catch { /* приватный режим */ }
   }
 
-  /** Вызывать из обработчика нажатия (iOS разрешает звук только после жеста). */
+  private htmlUnlocked = false;
+
+  /**
+   * Вызывать из обработчика click/touchend/keydown — iOS разрешает звук только внутри такого жеста.
+   * Ставим аудиосессию в режим playback, чтобы звук шёл и в беззвучном режиме iPhone/iPad.
+   */
   unlock() {
+    const nav = navigator as Navigator & { audioSession?: { type: string } };
+    try { if (nav.audioSession) nav.audioSession.type = 'playback'; } catch { /* старый Safari */ }
+    if (!this.htmlUnlocked) {
+      // Старый приём для iOS < 16.4: тихий <audio> переключает сессию в playback
+      this.htmlUnlocked = true;
+      try {
+        const a = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');
+        a.setAttribute('playsinline', ''); a.volume = 0.01;
+        void a.play().catch(() => { this.htmlUnlocked = false; });
+      } catch { /* ignore */ }
+    }
     if (!this.ctx) {
       const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AC) return;
@@ -54,8 +70,17 @@ class Sfx {
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
       this.ctx = ctx;
     }
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    const ctx = this.ctx;
+    if (ctx.state !== 'running') void ctx.resume().catch(() => undefined);
+    // «Отмычка»: пустой буфер, запущенный прямо в жесте, окончательно будит контекст на iOS
+    try {
+      const src = ctx.createBufferSource();
+      src.buffer = ctx.createBuffer(1, 1, 22050);
+      src.connect(ctx.destination); src.start(0);
+    } catch { /* ignore */ }
   }
+
+  get state() { return this.ctx?.state ?? 'none'; }
 
   setMuted(m: boolean) {
     this.muted = m;
@@ -63,9 +88,11 @@ class Sfx {
     if (this.ctx) this.out.gain.setTargetAtTime(m ? 0 : 0.55, this.ctx.currentTime, 0.02);
   }
 
-  play(name: Name, vol = 1) {
+  play(name: SfxName, vol = 1) {
+    if (vol <= 0.02) return;
     const ctx = this.ctx;
-    if (!ctx || this.muted || ctx.state !== 'running') return;
+    if (!ctx || this.muted) return;
+    if (ctx.state !== 'running') { void ctx.resume().catch(() => undefined); return; }
     const t = ctx.currentTime;
     const lim = LIMITS[name];
     if (t - (this.last.get(name) ?? -1) < lim.gap) return;
@@ -112,7 +139,7 @@ class Sfx {
   }
 
   /** @returns длительность, с */
-  private synth(n: Name, t: number, v: number): number {
+  private synth(n: SfxName, t: number, v: number): number {
     const r = 0.9 + Math.random() * 0.2;
     switch (n) {
       case 'swipe': this.hiss(t, 'bandpass', 2600 * r, 700, 0.13, 0.35 * v, 1.5, 0.015); return 0.15;

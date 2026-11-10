@@ -8,6 +8,8 @@ export type ZType = 'walker' | 'runner' | 'spitter' | 'charger' | 'brute' | 'jum
 
 export interface ZLook { r: number; color: number; dark: number; eye: number }
 
+export const ZTYPES: ZType[] = ['walker', 'runner', 'spitter', 'charger', 'brute', 'jumper', 'bomber', 'shield', 'ghost', 'colossus', 'brood', 'leaper', 'necro'];
+
 export const ZLOOK: Record<ZType, ZLook> = {
   walker: { r: 14, color: 0x74a84a, dark: 0x3d5e25, eye: 0xffe066 },
   runner: { r: 11, color: 0xb5c24f, dark: 0x5c6620, eye: 0xff6b6b },
@@ -42,15 +44,17 @@ export function makeTextures(scene: Phaser.Scene) {
   g.fillStyle(0xffffff).fillRect(0, 0, 6 * s, 3 * s);
   gen('chip', 6, 3);
 
-  // Игрок: плащ, капюшон, клинок в руке
-  g.fillStyle(0x000000, 0.3).fillCircle(22 * s, 23 * s, 17 * s);
-  g.fillStyle(0x1c7ed6).fillCircle(22 * s, 22 * s, 15 * s);
-  g.fillStyle(0x4dabf7).fillCircle(23 * s, 22 * s, 11 * s);
-  g.lineStyle(2.5 * s, 0xffffff).strokeCircle(22 * s, 22 * s, 15 * s);
-  g.fillStyle(0xe7f5ff).fillRect(33 * s, 13 * s, 10 * s, 3 * s);
-  g.fillStyle(0xffffff).fillTriangle(42 * s, 11 * s, 42 * s, 18 * s, 46 * s, 14.5 * s);
-  g.fillStyle(0xd0ebff).fillCircle(29 * s, 18 * s, 2 * s).fillCircle(29 * s, 26 * s, 2 * s);
-  gen('player', 46, 44);
+  // Игроки: плащ, капюшон, клинок в руке (второй — оранжевый)
+  for (const [key, c1, c2, c3] of [['player', 0x1c7ed6, 0x4dabf7, 0xd0ebff], ['player2', 0xe8590c, 0xffa94d, 0xffe8cc]] as const) {
+    g.fillStyle(0x000000, 0.3).fillCircle(22 * s, 23 * s, 17 * s);
+    g.fillStyle(c1).fillCircle(22 * s, 22 * s, 15 * s);
+    g.fillStyle(c2).fillCircle(23 * s, 22 * s, 11 * s);
+    g.lineStyle(2.5 * s, 0xffffff).strokeCircle(22 * s, 22 * s, 15 * s);
+    g.fillStyle(0xe7f5ff).fillRect(33 * s, 13 * s, 10 * s, 3 * s);
+    g.fillStyle(0xffffff).fillTriangle(42 * s, 11 * s, 42 * s, 18 * s, 46 * s, 14.5 * s);
+    g.fillStyle(c3).fillCircle(29 * s, 18 * s, 2 * s).fillCircle(29 * s, 26 * s, 2 * s);
+    gen(key, 46, 44);
+  }
 
   for (const t of Object.keys(ZLOOK) as ZType[]) drawZombie(g, t, gen);
   drawZombie(g, 'shield', gen, true);
