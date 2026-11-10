@@ -9,7 +9,6 @@ import { STAGES, loadProgress } from './stages';
 import { fetchStats, isDev, trackRun, trackVisit } from './stats';
 import { CHAPTERS } from './story';
 import { settings, saveSettings } from './settings';
-import { gyro } from './controls';
 import { META, buyMeta, loadMeta } from './meta';
 import { ACHIEVEMENTS, LOCKED_BY, isUnlocked, loadAch, unlockedSet } from './achievements';
 import { SYNERGIES, UPGRADES, byId } from './upgrades';
@@ -291,7 +290,9 @@ muteBtn.addEventListener('click', toggleMute);
 $('set-sound').addEventListener('click', toggleMute);
 
 // Гироскоп
-const syncGyro = () => { $('set-gyro').textContent = `📱 Наклон: ${gyro.enabled ? 'вкл' : 'выкл'}`; $('set-gyro').classList.toggle('on', gyro.enabled); };
+
+
+// Настройки: мрачный стиль и режим для левши
 const syncSet = () => {
   $('set-gloomy').classList.toggle('on', settings.gloomy);
   $('set-lefty').classList.toggle('on', settings.lefty);
@@ -300,14 +301,6 @@ const syncSet = () => {
 syncSet();
 $('set-gloomy').addEventListener('click', () => { settings.gloomy = !settings.gloomy; saveSettings(); syncSet(); });
 $('set-lefty').addEventListener('click', () => { settings.lefty = !settings.lefty; saveSettings(); syncSet(); });
-if (!gyro.supported || !('ontouchstart' in window)) $('set-gyro').classList.add('hidden');
-else if (gyro.enabled) gyro.listen();
-syncGyro();
-$('set-gyro').addEventListener('click', async () => {
-  if (gyro.enabled) gyro.disable();
-  else if (!(await gyro.enable())) alert('Датчик наклона недоступен: браузер не отдаёт данные гироскопа/акселерометра. Проверьте разрешение «Датчики движения» в настройках сайта.');
-  syncGyro();
-});
 
 // Навигация меню
 document.querySelectorAll<HTMLButtonElement>('.mode, .sub').forEach((b) => b.addEventListener('click', () => { sfx.unlock(); showPanel(b.dataset.go as Panel); }));

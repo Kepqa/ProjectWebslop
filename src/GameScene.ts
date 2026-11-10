@@ -11,7 +11,7 @@ import { UPGRADES, SYNERGIES, computeStats, offerPool, rollChoices, type Levels,
 import { S, WALK_FRAMES, ZLOOK, ZTYPES, makeTextures, zOrigin, type ZType } from './textures';
 import { World, FlowField, TILE, K_CRATE, K_GRAVE, K_FLOOR, K_PIT, K_TOXIC, K_DOOR, K_DOOROPEN, K_EXIT, key2, type Body } from './world';
 import { Controls } from './controls';
-import { applyLook } from './look';
+import { Look } from './look';
 import { addBones, loadMeta, metaBonus, type MetaBonus } from './meta';
 import { recordLife, unlockedSet } from './achievements';
 import { CHAPTERS, type StoryMap } from './story';
@@ -19,21 +19,21 @@ import { CHAPTERS, type StoryMap } from './story';
 interface ZDef { hp: number; speed: number; dmg: number; xp: number; heavy?: boolean; boss?: string }
 
 export const ZDEF: Record<ZType, ZDef> = {
-  walker: { hp: 4, speed: 58, dmg: 9, xp: 1 },
-  runner: { hp: 3, speed: 100, dmg: 7, xp: 1 },
-  spitter: { hp: 6, speed: 52, dmg: 8, xp: 2 },
-  charger: { hp: 14, speed: 66, dmg: 16, xp: 3 },
-  brute: { hp: 40, speed: 46, dmg: 22, xp: 6, heavy: true },
-  jumper: { hp: 7, speed: 62, dmg: 10, xp: 2 },
-  bomber: { hp: 5, speed: 76, dmg: 0, xp: 2 },
-  shield: { hp: 14, speed: 50, dmg: 12, xp: 3 },
-  ghost: { hp: 5, speed: 62, dmg: 8, xp: 2 },
+  walker: { hp: 6, speed: 46, dmg: 9, xp: 1 },
+  runner: { hp: 4.5, speed: 80, dmg: 7, xp: 1 },
+  spitter: { hp: 9, speed: 42, dmg: 8, xp: 2 },
+  charger: { hp: 21, speed: 52, dmg: 16, xp: 3 },
+  brute: { hp: 60, speed: 38, dmg: 22, xp: 7, heavy: true },
+  jumper: { hp: 10, speed: 50, dmg: 10, xp: 2 },
+  bomber: { hp: 7, speed: 62, dmg: 0, xp: 2 },
+  shield: { hp: 20, speed: 42, dmg: 12, xp: 3 },
+  ghost: { hp: 7, speed: 52, dmg: 8, xp: 2 },
   colossus: { hp: 300, speed: 44, dmg: 30, xp: 0, heavy: true, boss: 'Гнилой Колосс' },
   brood: { hp: 230, speed: 38, dmg: 24, xp: 0, heavy: true, boss: 'Матка Роя' },
   leaper: { hp: 260, speed: 50, dmg: 26, xp: 0, heavy: true, boss: 'Скакун-Титан' },
   necro: { hp: 220, speed: 55, dmg: 20, xp: 0, heavy: true, boss: 'Некромант' },
-  dog: { hp: 3, speed: 104, dmg: 7, xp: 1 },
-  boar: { hp: 18, speed: 60, dmg: 15, xp: 3 },
+  dog: { hp: 4.5, speed: 84, dmg: 7, xp: 1 },
+  boar: { hp: 27, speed: 50, dmg: 15, xp: 3 },
 };
 
 export const PLAYER_R = 15;
@@ -44,7 +44,9 @@ export const SLAM_R = 180;
 export const BOMB_R = 105;
 const RUNE_COST = 18;
 const CELL = 64;
-const MAX_ZOMBIES = 380;
+const MAX_ZOMBIES = 240;
+const BARREL_R = 14;
+const BARREL_BLAST = 130;
 const BLADE_KNOCK = 260;
 const REVIVE_R = 70;
 const SNAP_MS = 50;
@@ -63,6 +65,9 @@ export interface Player extends Body {
   noise: number; running: boolean; meta: MetaBonus; unlocked: Set<string> | null;
   runeAt: number; rerolls: number; synSeen: Set<string>; vortexCd: number; spearCd: number; waveCd: number;
   field: FlowField; fTx: number; fTy: number; fAt: number;
+  // необычные предметы
+  beatAt: number; beatN: number; stillT: number; rooted: boolean; wardAt: number; totemT: number; barrelT: number;
+  markT: number; reaperN: number; chronoAt: number; lassoAt: number; trapCd: number; ballCd: number; greedCd: number;
 }
 
 interface Zombie extends Body {
@@ -77,6 +82,12 @@ interface Zombie extends Body {
   tgtX: number; tgtY: number; jx0: number; jy0: number; air: boolean;
   vsx: number; vsy: number; vrot: number; valpha: number; vflags: number;
   awake: boolean; wakeT: number;
+  pack: number; cracks: number; stunT: number; marked: boolean; plague: boolean; repCd: number; bumpCd: number; hookT: number;
+}
+/** Физические предметы на земле: бочка (5), тотем (6), капкан (8). */
+interface Prop {
+  kind: 5 | 6 | 8; x: number; y: number; vx: number; vy: number; lvl: number; img: Phaser.GameObjects.Image;
+  fuse: number; until: number; tick: number; owner: Player | null; rolling: boolean; caught: Zombie | null; hitBy: number; dead: boolean;
 }
 interface Proj {
   x: number; y: number; vx: number; vy: number; life: number; dmg: number; img: Phaser.GameObjects.Image;
@@ -85,7 +96,7 @@ interface Proj {
 interface Boom { x: number; y: number; vx: number; vy: number; t: number; img: Phaser.GameObjects.Image; dmg: number; dead: boolean; owner: Player }
 interface Gem { x: number; y: number; value: number; chest: boolean; heal: boolean; img: Phaser.GameObjects.Image; pulled: boolean; t: number }
 interface Seg { x1: number; y1: number; x2: number; y2: number; born: number; kind: 'blade' | 'dull' | 'echo'; width: number; sid: number; remote: boolean }
-interface Bolt { x: number; y: number; vx: number; vy: number; life: number; dmg: number; pierce: boolean; hit: Set<Zombie>; kind: 3 | 4; img: Phaser.GameObjects.Image; owner: Player; dead: boolean }
+interface Bolt { x: number; y: number; vx: number; vy: number; life: number; dmg: number; pierce: boolean; hit: Set<Zombie>; kind: 3 | 4 | 7 | 9; img: Phaser.GameObjects.Image; owner: Player; dead: boolean; bounces: number; homing: boolean }
 interface Mine { x: number; y: number; t: number; r: number; dmg: number; owner: Player; img: Phaser.GameObjects.Image }
 interface Vortex { x: number; y: number; r: number; until: number; dur: number; dps: number; owner: Player; tick: number }
 interface Wave { cx: number; cy: number; rel: number[]; t: number; dur: number; s1: number; dmg: number; hit: Set<Zombie>; owner: Player; fire: boolean; burned: boolean }
@@ -94,6 +105,7 @@ interface Stroke {
   id: number; owner: Player; pts: { x: number; y: number }[]; hit: Map<Zombie, number>; tiles: Set<number>; kills: number; blasts: number;
   lastSX: number; lastSY: number; lastT: number; segs: Seg[]; loopStart: number; cssLen: number; sounded: boolean;
   charged: boolean; minePx: number; lastDir: number | null; mhit: Map<Zombie, number>; pid: number;
+  beatChecked: boolean; beat: boolean; trapped: boolean;
 }
 
 type PauseMode = '' | 'levelup' | 'user' | 'cd';
@@ -134,9 +146,13 @@ export class GameScene extends Phaser.Scene {
   private burns: BurnSeg[] = [];
   private timers: { at: number; fn: () => void }[] = [];
   private grid = new Map<number, Zombie[]>();
+  private props: Prop[] = [];
+  private packSeq = 0; private packSpeed = new Map<number, number>(); private packC = new Map<number, { x: number; y: number; n: number }>();
+  private chronoUntil = 0; private barrelSpawnT = 4; private markPulse = 0; private bonkAt = 0;
   private strokes = new Map<number, Stroke>();
   private remoteStrokes = new Map<number, Stroke>();
   private controls!: Controls;
+  private look!: Look;
   private mode: 'survival' | 'story' = 'survival';
   private chapter = 0;
   private map: StoryMap | null = null;
@@ -210,7 +226,7 @@ export class GameScene extends Phaser.Scene {
 
     this.cameras.main.startFollow(this.me.img, false, 1, 1);
     this.applyZoom();
-    applyLook(this.cameras.main);
+    this.look = new Look(this);
     this.scale.on('resize', this.applyZoom, this);
     const onVis = () => { if (document.hidden && !this.coop && !this.paused && !this.over) this.requestPause(); };
     document.addEventListener('visibilitychange', onVis);
@@ -254,6 +270,8 @@ export class GameScene extends Phaser.Scene {
       noise: 0, running: false, meta, unlocked: remote ? new Set() : unlockedSet(),
       rerolls: 2 + meta.rerolls, synSeen: new Set(), vortexCd: 0, spearCd: 0, waveCd: 0,
       field: new FlowField(), fTx: 1e9, fTy: 1e9, fAt: -1,
+      beatAt: -9, beatN: 0, stillT: 0, rooted: false, wardAt: 0, totemT: 3, barrelT: 2, markT: 1, reaperN: 0, chronoAt: 0,
+      lassoAt: -99, trapCd: 0, ballCd: 0, greedCd: 0,
     };
   }
 
@@ -272,6 +290,8 @@ export class GameScene extends Phaser.Scene {
     this.objIdx = 0; this.objProg = 0; this.bossKills = 0; this.holdTick = 0;
     this.falls = 0; this.rec = { kills: 0, bosses: 0, falls: 0 }; this.lifeAt = 0;
     this.combo = 0; this.comboT = 0; this.bestCombo = 0; this.score = 0; this.frenzyT = 0; this.milestone = 0;
+    this.props = []; this.packSeq = 0; this.packSpeed.clear(); this.packC.clear();
+    this.chronoUntil = 0; this.barrelSpawnT = 4; this.markPulse = 0;
   }
 
   private applyZoom() {
@@ -281,8 +301,8 @@ export class GameScene extends Phaser.Scene {
     this.chunkAt = -1;
   }
 
-  private get dmgScale() { return (this.map ? 1 + this.progress * 0.8 : 1 + this.elapsed / 300) * this.stage.dmgMul; }
-  private get hpScale() { return (this.map ? 1 + this.progress * 2.5 + this.elapsed / 400 : 1 + this.elapsed / 140) * this.stage.hpMul * (this.players.length > 1 ? 1.15 : 1); }
+  private get dmgScale() { return (this.map ? 1 + this.progress * 0.5 : 1 + this.elapsed / 330) * this.stage.dmgMul; }
+  private get hpScale() { return (this.map ? 1 + this.progress * 1.6 + this.elapsed / 600 : 1 + this.elapsed / 150) * this.stage.hpMul * (this.players.length > 1 ? 1.15 : 1); }
   private alivePlayers() { return this.players.filter((p) => p.alive); }
 
   // ---------- Реплицируемые эффекты (локально + событие гостю) ----------
@@ -315,7 +335,7 @@ export class GameScene extends Phaser.Scene {
     return {
       id: ++this.strokeSeq, owner, pts: [{ x, y }], hit: new Map(), tiles: new Set(), kills: 0, blasts: 0,
       lastSX: sx, lastSY: sy, lastT: performance.now(), segs: [], loopStart: 0, cssLen: 0, sounded: false,
-      charged: false, minePx: 0, lastDir: null, mhit: new Map(), pid,
+      charged: false, minePx: 0, lastDir: null, mhit: new Map(), pid, beatChecked: false, beat: false, trapped: false,
     };
   }
 
@@ -377,9 +397,24 @@ export class GameScene extends Phaser.Scene {
     let kind: Seg['kind'] = 'dull';
     if (speed >= SWIPE_MIN_SPEED) {
       const cost = d * SWIPE_COST * st.costMul;
-      if (pl.energy >= cost) { pl.energy -= cost; kind = 'blade'; } else if (pl === this.me) this.hud.energyEmpty();
+      if (pl.energy >= cost) { pl.energy -= cost; kind = 'blade'; }
+      // Кровавый пакт: без энергии платим здоровьем
+      else if (st.pactDmg > 0 && pl.hp > 8) { if (!this.god) pl.hp -= cost * 0.3; kind = 'blade'; if (Math.random() < 0.3) this.vfx.burst('gore', 1, wx, wy); }
+      else if (pl === this.me) this.hud.energyEmpty();
     }
-    const width = kind === 'blade' ? st.bladeWidth * (s.charged ? 1.5 : 1) * (this.frenzyT > 0 ? 1.4 : 1) : 4;
+    if (kind === 'blade' && !s.beatChecked) {
+      s.beatChecked = true;
+      const gap = this.elapsed - pl.beatAt;
+      pl.beatAt = this.elapsed;
+      pl.beatN = gap >= 0.35 && gap <= 0.9 ? pl.beatN + 1 : 1;
+      if (st.rhythmMul > 0 && (pl.beatN % 3 === 0 || (st.syn.timebreak && this.chronoUntil > this.elapsed))) {
+        s.beat = true;
+        this.ring(wx, wy, 46, 0xff8787, 0.3, 5);
+        this.text(wx, wy - 26, 'В ТАКТ!', '#ff8787', 18);
+        this.snd('level', 0.35, wx, wy, 1.6);
+      }
+    }
+    const width = kind === 'blade' ? st.bladeWidth * (s.charged ? 1.5 : 1) * (this.frenzyT > 0 ? 1.4 : 1) * (s.beat ? 1.35 : 1) : 4;
     const seg: Seg = { x1: prev.x, y1: prev.y, x2: wx, y2: wy, born: this.elapsed, kind, width, sid: s.id, remote: pl.remote };
     this.segs.push(seg);
     if (!pl.remote) this.E('g', seg.x1 | 0, seg.y1 | 0, seg.x2 | 0, seg.y2 | 0, kind === 'blade' ? 0 : 1, seg.width);
@@ -394,6 +429,14 @@ export class GameScene extends Phaser.Scene {
       pl.noise = Math.max(pl.noise, 12);
       let mul = (1 + st.momentum * Phaser.Math.Clamp((speed - SWIPE_MIN_SPEED) / 1.5, 0, 1)) * this.comboDmg(st);
       if (s.charged) mul *= st.chargeMul * (st.syn.breach ? 1.5 : 1);
+      if (s.beat) mul *= st.rhythmMul;
+      if (pl.rooted) mul *= 1 + st.anchorMul;
+      if (st.pactDmg > 0 && pl.hp < pl.stats.maxHp * 0.5) mul *= 1 + st.pactDmg;
+      // Капкан в начале длинного свайпа
+      if (st.trapDmg > 0 && !s.trapped && s.cssLen >= 160 && pl.trapCd <= this.elapsed) {
+        s.trapped = true; pl.trapCd = this.elapsed + 1.6;
+        this.addProp(8, s.pts[0].x, s.pts[0].y, pl, 12);
+      }
       const pierce = s.charged && !!st.syn.breach;
       this.bladeHit(seg, s.hit, st.bladeDamage * mul, s, pl, pierce);
       if (Math.random() < 0.5) this.vfx.burst('spark', 1, wx, wy);
@@ -483,6 +526,24 @@ export class GameScene extends Phaser.Scene {
     const st = pl.stats;
     const a = s.segs[0], b = s.segs[s.segs.length - 1];
     const ang = Math.atan2(b.y2 - a.y1, b.x2 - a.x1);
+    // Крюк: задетые стягиваются к концу следа и сталкиваются
+    if (st.hookPull > 0 && s.hit.size) {
+      let n = 0;
+      for (const z of s.hit.keys()) {
+        if (z.dead || z.heavy || z.air || z.boss) continue;
+        const dx = b.x2 - z.x, dy = b.y2 - z.y, d = Math.hypot(dx, dy) || 1;
+        const v = st.hookPull * Math.min(1, d / 160);
+        z.kx = (dx / d) * v; z.ky = (dy / d) * v; z.hookT = this.elapsed + 0.7;
+        if (n++ < 6) this.vfx.burst('spark', 1, z.x, z.y);
+      }
+      if (n) { this.snd('throw', 0.8, b.x2, b.y2, 0.7); this.ring(b.x2, b.y2, 30, 0xced4da, 0.25, 3); }
+    }
+    // Рикошет-шар
+    if (st.ballDmg > 0 && s.cssLen >= 80 && pl.ballCd <= this.elapsed) {
+      pl.ballCd = this.elapsed + 0.7;
+      this.addBolt(b.x2, b.y2, ang, 640, 3.2, st.ballDmg + st.bladeDamage * 0.4, true, 9, pl, st.ballBounces);
+      this.snd('throw', 0.7, b.x2, b.y2, 1.5);
+    }
     if (st.boomDmg > 0 && s.cssLen >= 220 && pl.boomCd <= this.elapsed) {
       pl.boomCd = this.elapsed + st.boomCd;
       for (const da of st.syn.twinboom ? [0, Math.PI] : [0]) {
@@ -521,9 +582,10 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private addBolt(x: number, y: number, ang: number, speed: number, life: number, dmg: number, pierce: boolean, kind: 3 | 4, owner: Player) {
-    const img = this.add.image(x, y, kind === 3 ? 'spear' : 'shard').setScale(1 / S).setDepth(6).setRotation(ang);
-    this.bolts.push({ x, y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, life, dmg, pierce, hit: new Set(), kind, img, owner, dead: false });
+  private addBolt(x: number, y: number, ang: number, speed: number, life: number, dmg: number, pierce: boolean, kind: Bolt['kind'], owner: Player, bounces = 0) {
+    const tex = kind === 3 ? 'spear' : kind === 4 ? 'shard' : kind === 7 ? 'soul' : 'ball';
+    const img = this.add.image(x, y, tex).setScale(1 / S).setDepth(6).setRotation(ang);
+    this.bolts.push({ x, y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, life, dmg, pierce, hit: new Set(), kind, img, owner, dead: false, bounces, homing: kind === 7 });
   }
 
   // ---------- Сеть (хост) ----------
@@ -598,6 +660,7 @@ export class GameScene extends Phaser.Scene {
     for (const g of this.gems) if (Math.abs(g.x - p2.x) < R && Math.abs(g.y - p2.y) < R) w.gem(g.x, g.img.y, g.heal ? 3 : g.chest ? 2 : g.value >= 5 ? 1 : 0);
     for (const p of this.projs) if (!p.dead) w.proj(p.x, p.y, p.vx, p.vy, p.friendly ? 2 : p.kind);
     for (const b of this.bolts) if (!b.dead) w.proj(b.x, b.y, b.vx, b.vy, b.kind);
+    for (const b of this.props) if (!b.dead && Math.abs(b.x - p2.x) < R && Math.abs(b.y - p2.y) < R) w.proj(b.x, b.y, b.vx, b.vy, b.kind === 5 && b.fuse >= 0 ? 10 : b.kind);
     for (const b of this.booms) if (!b.dead) w.boom(b.x, b.y, b.img.rotation);
     const pl = this.players.map((p) => [
       Math.round(p.x), Math.round(p.y), p.lvl, +p.rot.toFixed(2), Math.ceil(p.hp), p.stats.maxHp, Math.round(p.energy), p.stats.energyMax,
@@ -701,11 +764,33 @@ export class GameScene extends Phaser.Scene {
         continue;
       }
       this.slow(z, pl);
-      if (pl.stats.bleedDps > 0) { z.bleedUntil = this.elapsed + 3; z.bleedDps = pl.stats.bleedDps; z.bleedOwner = pl; }
+      const st = pl.stats;
+      if (st.bleedDps > 0) { z.bleedUntil = this.elapsed + 3; z.bleedDps = st.bleedDps; z.bleedOwner = pl; if (st.syn.epidemic) z.plague = true; }
       this.burst('gore', z.heavy ? 5 : 3, z.x, z.y);
       this.snd('hit', 0.8, z.x, z.y);
       const pitch = 1 + 0.07 * Math.min(14, stroke?.kills ?? 0);
-      if (this.damage(z, dmg, ang, BLADE_KNOCK * pl.stats.knockMul, true, pitch)) {
+      let d = dmg;
+      // Контрудар: бьём в момент атаки
+      if (st.parryMul > 0 && (['windup', 'dash', 'charge', 'fuse', 'slam'].includes(z.state))) {
+        d *= st.parryMul;
+        if (!z.boss) { z.state = 'walk'; z.stunT = st.parryStun; z.cd1 = Math.max(z.cd1, 1.5); }
+        this.text(z.x, z.y - 24, 'КОНТРУДАР', '#74c0fc', 18);
+        this.ring(z.x, z.y, z.r + 22, 0x74c0fc, 0.3, 4);
+        this.snd('clank', 1, z.x, z.y, 1.4);
+      }
+      // Казнь / Приговор
+      if (!z.boss && ((st.execute > 0 && (z.hp - d) / z.maxHp <= st.execute) || (st.syn.deadeye && z.marked))) {
+        if (z.hp > d) { this.burst('gore', 10, z.x, z.y); pl.energy = Math.min(st.energyMax, pl.energy + 1); }
+        d = Math.max(d, z.hp + 1);
+      }
+      // Трещина: каждый третий удар раскалывает
+      if (st.crackDmg > 0 && ++z.cracks >= 3) {
+        z.cracks = 0;
+        const zx = z.x, zy = z.y, sd = z.maxHp * st.crackDmg + st.bladeDamage * 0.5;
+        this.timers.push({ at: this.elapsed + 0.02, fn: () => this.blast(zx, zy, 70 + 8 * (pl.levels.crack ?? 0), sd, 0x99e9f2, 240, true) });
+        this.burst('spark', 10, zx, zy);
+      }
+      if (this.damage(z, d, ang, BLADE_KNOCK * st.knockMul * (st.pinsDmg > 0 ? 1.25 : 1), true, pitch)) {
         if (pl.stats.bloodEnergy) pl.energy = Math.min(pl.stats.energyMax, pl.energy + pl.stats.bloodEnergy);
         if (!stroke) continue;
         stroke.kills++;
@@ -715,6 +800,13 @@ export class GameScene extends Phaser.Scene {
           this.blast(z.x, z.y, pl.stats.comboRadius, pl.stats.comboDmg, 0xff922b);
         }
       }
+    }
+    // бочки: пинок клинком
+    for (const b of this.props) {
+      if (b.dead || b.kind !== 5 || (stroke && b.hitBy === stroke.id)) continue;
+      if (distToSeg(b.x, b.y, seg.x1, seg.y1, seg.x2, seg.y2) > hw + BARREL_R) continue;
+      b.hitBy = stroke?.id ?? -1;
+      this.kickBarrel(b, ang, pl);
     }
     for (const p of this.projs) {
       if (p.dead || p.friendly || distToSeg(p.x, p.y, seg.x1, seg.y1, seg.x2, seg.y2) >= hw + 10) continue;
@@ -831,18 +923,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** Взрыв по зомби (без урона игрокам). */
-  private blast(x: number, y: number, r: number, dmg: number, color: number, knock = 300) {
+  private blast(x: number, y: number, r: number, dmg: number, color: number, knock = 300, quiet = false) {
     this.ring(x, y, r, color, 0.35);
-    this.burst('spark', 16, x, y); this.burst('dust', 8, x, y);
-    this.shake(110, 0.004);
-    this.snd('explode', 0.6, x, y);
+    this.burst('spark', quiet ? 6 : 16, x, y);
+    if (!quiet) { this.burst('dust', 8, x, y); this.shake(110, 0.004); this.snd('explode', 0.6, x, y); } else this.snd('hit', 0.7, x, y, 1.3);
+    this.igniteNear(x, y, r);
     for (const z of this.queryRect(x - r, y - r, x + r, y + r)) {
       if (!z.dead && (z.x - x) ** 2 + (z.y - y) ** 2 < (r + z.r) ** 2) this.damage(z, dmg, Math.atan2(z.y - y, z.x - x), knock);
     }
   }
 
   private checkRune(s: Stroke) {
-    if (s.owner.stats.runeMult <= 0) return; // печать — только после апгрейда
+    if (s.owner.stats.runeMult <= 0 && s.owner.stats.lassoDmg <= 0) return; // печать/аркан — только после апгрейда
     const pts = s.pts;
     const n = pts.length;
     if (n > 400 || n - s.loopStart < 10) return;
@@ -853,6 +945,8 @@ export class GameScene extends Phaser.Scene {
       if (polyArea(poly) < 3500) continue;
       s.loopStart = n;
       const pl = s.owner;
+      if (pl.stats.lassoDmg > 0 && this.elapsed - pl.lassoAt >= pl.stats.lassoCd) { pl.lassoAt = this.elapsed; this.castLasso(poly, pl); }
+      if (pl.stats.runeMult <= 0) return;
       if (this.elapsed - pl.runeAt < pl.stats.runeCd) { if (pl === this.me) this.hud.toast('Печать перезаряжается', 700); return; }
       const cost = RUNE_COST * pl.stats.costMul;
       if (pl.energy < cost) { if (pl === this.me) this.hud.energyEmpty(); return; }
@@ -885,6 +979,264 @@ export class GameScene extends Phaser.Scene {
     this.E('P', poly.filter((_, i) => i % step === 0).flatMap((p) => [p.x | 0, p.y | 0]));
     for (let i = 0; i < poly.length; i += 3) this.vfx.burst('magic', 1, poly[i].x, poly[i].y);
     if (caught >= 5) this.text((x1 + x2) / 2, (y1 + y2) / 2, `ПЕЧАТЬ x${caught}`, '#d0bfff', 24);
+  }
+
+  // ---------- Физика предметов: бочки, тотемы, капканы ----------
+  private addProp(kind: Prop['kind'], x: number, y: number, owner: Player | null, life = Infinity): Prop {
+    const tex = kind === 5 ? 'barrel' : kind === 6 ? 'totem' : 'trap';
+    const img = this.add.image(x, y, tex).setScale(0).setDepth(3);
+    this.tweens.add({ targets: img, scale: 1 / S, duration: 220, ease: 'Back.easeOut' });
+    const b: Prop = {
+      kind, x, y, vx: 0, vy: 0, lvl: this.world.levelOf(Math.floor(x / TILE), Math.floor(y / TILE)), img, fuse: -1,
+      until: this.elapsed + life, tick: 0, owner, rolling: false, caught: null, hitBy: 0, dead: false,
+    };
+    this.props.push(b);
+    if (kind !== 5) this.burst('dust', 6, x, y);
+    return b;
+  }
+
+  private addBarrel(x: number, y: number, owner: Player | null) {
+    if (this.props.filter((b) => b.kind === 5).length >= 24) return;
+    if (this.world.solidAtPx(x, y) || this.world.kindAtPx(x, y) === K_PIT) return;
+    this.addProp(5, x, y, owner);
+  }
+
+  /** Пинок клинком: бочка летит по свайпу и загорается (со «Страйком» — катится и взрывается у стены). */
+  private kickBarrel(b: Prop, ang: number, pl: Player) {
+    b.vx = Math.cos(ang) * 560; b.vy = Math.sin(ang) * 560; b.owner = pl;
+    if (pl.stats.syn.bowling) { b.rolling = true; if (b.fuse < 0) b.fuse = 1.8; }
+    else if (b.fuse < 0) b.fuse = 0.65;
+    this.snd('crate', 0.8, b.x, b.y, 0.8);
+    this.burst('spark', 6, b.x, b.y);
+  }
+
+  /** Взрыв рядом поджигает бочки — цепная реакция. */
+  private igniteNear(x: number, y: number, r: number) {
+    for (const b of this.props) {
+      if (b.dead || b.kind !== 5) continue;
+      if ((b.x - x) ** 2 + (b.y - y) ** 2 > (r + BARREL_R) ** 2) continue;
+      if (b.fuse < 0 || b.fuse > 0.25) b.fuse = 0.12 + Math.random() * 0.12;
+    }
+  }
+
+  private explodeBarrel(b: Prop) {
+    b.dead = true; b.img.destroy();
+    let mul = 1;
+    for (const p of this.players) mul = Math.max(mul, p.stats.barrelMul);
+    if (b.rolling) mul *= 2;
+    const dmg = 16 * Math.sqrt(this.hpScale) * mul, R = BARREL_BLAST * (b.rolling ? 1.2 : 1);
+    this.burst('gore', 4, b.x, b.y); this.burst('dust', 14, b.x, b.y);
+    this.ring(b.x, b.y, R * 0.6, 0xffe066, 0.25, 8);
+    this.shake(180, 0.008);
+    this.snd('explode', 1, b.x, b.y);
+    this.blast(b.x, b.y, R, dmg, 0xff6b00, 460);
+    // своя же бочка опасна: стой подальше
+    for (const p of this.alivePlayers()) if (Math.hypot(p.x - b.x, p.y - b.y) < R * 0.6 + PLAYER_R) this.hurt(p, 9 * this.dmgScale);
+  }
+
+  private updateProps(dt: number) {
+    // выживание: бочки появляются в округе сами
+    if (!this.map) {
+      this.barrelSpawnT -= dt;
+      if (this.barrelSpawnT <= 0) {
+        this.barrelSpawnT = 6;
+        const pl = this.randomAlive();
+        const near = this.props.filter((b) => b.kind === 5 && Math.hypot(b.x - pl.x, b.y - pl.y) < 900).length;
+        if (near < 5) {
+          const pos = this.findSpawn(pl, 0, undefined, undefined, 240 + Math.random() * 320);
+          if (pos) this.addBarrel(pos.x, pos.y, null);
+        }
+      }
+    }
+    for (const b of this.props) {
+      if (b.dead) continue;
+      if (b.kind === 5) this.updateBarrel(b, dt);
+      else if (b.kind === 6) {
+        b.tick -= dt;
+        if (b.tick <= 0 && b.owner) {
+          b.tick = 0.6;
+          let best: Zombie | null = null, bd = 280 * 280;
+          for (const z of this.queryRect(b.x - 280, b.y - 280, b.x + 280, b.y + 280)) {
+            const dd = (z.x - b.x) ** 2 + (z.y - b.y) ** 2;
+            if (!z.dead && dd < bd) { bd = dd; best = z; }
+          }
+          if (best) {
+            const pts = jagged(b.x, b.y - 16, best.x, best.y);
+            this.vfx.bolt(this.elapsed, pts);
+            this.E('b', pts.map((v) => v | 0));
+            this.snd('zap', 0.45, b.x, b.y, 1.3);
+            this.damage(best, b.owner.stats.totemDmg + b.owner.stats.bladeDamage * 0.2);
+          }
+        }
+        if (b.until <= this.elapsed) { b.dead = true; b.img.destroy(); this.burst('dust', 10, b.x, b.y); }
+      } else {
+        const st = b.owner?.stats;
+        if (!b.caught && st) {
+          for (const z of this.queryRect(b.x - 30, b.y - 30, b.x + 30, b.y + 30)) {
+            if (z.dead || z.boss || z.air || (z.x - b.x) ** 2 + (z.y - b.y) ** 2 > (z.r + 8) ** 2) continue;
+            b.caught = z; z.stunT = st.trapHold; b.until = this.elapsed + st.trapHold;
+            this.snd('clank', 1, b.x, b.y, 0.7);
+            this.ring(b.x, b.y, 150, 0xadb5bd, 0.35, 3);
+            this.damage(z, st.trapDmg + st.bladeDamage * 0.3);
+            // соседей тянет к пойманному
+            for (const o of this.queryRect(b.x - 150, b.y - 150, b.x + 150, b.y + 150)) {
+              if (o === z || o.dead || o.heavy || o.air) continue;
+              const dx = b.x - o.x, dy = b.y - o.y, d = Math.hypot(dx, dy) || 1;
+              if (d < 150) { o.kx += (dx / d) * 320; o.ky += (dy / d) * 320; }
+            }
+            break;
+          }
+        }
+        if (b.caught && !b.caught.dead) { b.caught.x = b.x; b.caught.y = b.y; b.caught.kx = 0; b.caught.ky = 0; }
+        if (b.until <= this.elapsed) { b.dead = true; b.img.destroy(); this.burst('dust', 6, b.x, b.y); }
+      }
+    }
+    // далеко оставленные бочки убираем (выживание)
+    if (!this.map) for (const b of this.props) {
+      if (!b.dead && b.kind === 5 && this.players.every((p) => Math.hypot(p.x - b.x, p.y - b.y) > 2200)) { b.dead = true; b.img.destroy(); }
+    }
+    this.props = this.props.filter((b) => !b.dead);
+  }
+
+  private updateBarrel(b: Prop, dt: number) {
+    const spd = Math.hypot(b.vx, b.vy);
+    if (spd > 4) {
+      b.x += b.vx * dt; b.y += b.vy * dt;
+      const fr = Math.exp(-(b.rolling ? 0.6 : 3.5) * dt);
+      b.vx *= fr; b.vy *= fr;
+      const ox = b.x, oy = b.y;
+      const hit = this.world.resolve(b, BARREL_R);
+      if (hit) {
+        if (b.rolling) { this.explodeBarrel(b); return; }
+        if (Math.abs(b.x - ox) > 0.1) b.vx = -b.vx * 0.4;
+        if (Math.abs(b.y - oy) > 0.1) b.vy = -b.vy * 0.4;
+      }
+      this.world.updateLevel(b);
+      if (this.world.kindAtPx(b.x, b.y) === K_PIT) {
+        b.dead = true; this.snd('fall', 0.6, b.x, b.y);
+        this.tweens.add({ targets: b.img, scale: 0, duration: 400, onComplete: () => b.img.destroy() });
+        return;
+      }
+      if (b.rolling) b.img.setRotation(b.img.rotation + (spd * dt) / BARREL_R);
+    } else { b.vx = 0; b.vy = 0; }
+    // зомби: сбивает на скорости, иначе обходят; летящий зомби поджигает
+    for (const z of this.queryRect(b.x - 50, b.y - 50, b.x + 50, b.y + 50)) {
+      if (z.dead || z.air) continue;
+      const ox = z.x - b.x, oy = z.y - b.y, min = z.r + BARREL_R, dd = ox * ox + oy * oy;
+      if (dd >= min * min || dd < 0.01) continue;
+      const dist = Math.sqrt(dd);
+      if (spd > 160 && z.bumpCd <= this.elapsed) {
+        z.bumpCd = this.elapsed + 0.3;
+        this.burst('spark', 3, z.x, z.y);
+        this.damage(z, (5 + spd / 70) * (b.rolling ? 2 : 1), Math.atan2(b.vy, b.vx), spd * 0.8);
+        if (!b.rolling) { b.vx *= 0.7; b.vy *= 0.7; }
+      } else if (!z.heavy) { z.x = b.x + (ox / dist) * min; z.y = b.y + (oy / dist) * min; }
+      if (Math.hypot(z.kx, z.ky) > 220 && b.fuse < 0) b.fuse = 0.35;
+    }
+    // герой толкает бочку
+    for (const p of this.alivePlayers()) {
+      const ox = b.x - p.x, oy = b.y - p.y, min = PLAYER_R + BARREL_R, dd = ox * ox + oy * oy;
+      if (dd >= min * min || dd < 0.01) continue;
+      const dist = Math.sqrt(dd);
+      b.x = p.x + (ox / dist) * min; b.y = p.y + (oy / dist) * min;
+      b.vx = (ox / dist) * 170; b.vy = (oy / dist) * 170;
+    }
+    if (b.fuse >= 0) {
+      b.fuse -= dt;
+      const blink = Math.floor(b.fuse * 14) % 2 === 0;
+      b.img.setTint(blink ? 0xffffff : 0xffa8a8).setScale((1 + (blink ? 0.12 : 0)) / S);
+      if (Math.random() < dt * 30) this.vfx.burst('spark', 1, b.x, b.y - 8);
+      if (b.fuse <= 0) { this.explodeBarrel(b); return; }
+    }
+    b.img.setPosition(b.x, b.y);
+  }
+
+  /** Летящий зомби сбивает соседа (кегли). */
+  private bonk(z: Zombie, o: Zombie, spd: number) {
+    o.bumpCd = this.elapsed + 0.3;
+    o.kx += z.kx * 0.6; o.ky += z.ky * 0.6;
+    z.kx *= 0.55; z.ky *= 0.55;
+    let dmg = 0, crackBy: Player | null = null;
+    for (const p of this.players) {
+      dmg = Math.max(dmg, p.stats.pinsDmg * Math.min(1.5, spd / 300));
+      if (z.hookT > this.elapsed && p.stats.hookPull > 0) dmg = Math.max(dmg, 2 + (p.levels.hook ?? 0) * 1.5);
+      if (z.hookT > this.elapsed && p.stats.syn.brittlehook) crackBy = p;
+    }
+    if (this.elapsed - this.bonkAt > 0.07) { this.bonkAt = this.elapsed; this.snd('hit', 0.55, o.x, o.y, 0.75); this.vfx.burst('spark', 2, o.x, o.y); }
+    if (crackBy && ++o.cracks >= 3) {
+      o.cracks = 0;
+      const x = o.x, y = o.y, sd = o.maxHp * crackBy.stats.crackDmg + crackBy.stats.bladeDamage * 0.5;
+      this.timers.push({ at: this.elapsed + 0.02, fn: () => this.blast(x, y, 70, sd, 0x99e9f2, 240, true) });
+    }
+    if (dmg > 0) { this.damage(o, dmg); this.damage(z, dmg * 0.5); }
+  }
+
+  /** Эффекты предметов при любой смерти зомби: метка, жнец, чума. */
+  private onKillItems(z: Zombie) {
+    let gems = 0, plague = 0, spread = 0, epi = false;
+    for (const p of this.players) {
+      gems = Math.max(gems, p.stats.markGems * (p.stats.markCd > 0 ? 1 : 0));
+      if (p.stats.plagueDps > plague) { plague = p.stats.plagueDps; spread = p.stats.plagueSpread; }
+      if (p.stats.syn.epidemic) epi = true;
+      if (p.alive && p.stats.reaperEvery > 0 && ++p.reaperN >= p.stats.reaperEvery) {
+        p.reaperN = 0;
+        this.addBolt(z.x, z.y, Math.random() * Math.PI * 2, 430, 2.6, p.stats.reaperDmg + p.stats.bladeDamage * 0.3, true, 7, p);
+      }
+    }
+    if (z.marked) {
+      const x = z.x, y = z.y, d = 8 + z.maxHp * 0.4;
+      this.timers.push({ at: this.elapsed + 0.03, fn: () => this.blast(x, y, 120, d, 0xff6b6b, 380) });
+      const n = Math.max(3, gems);
+      for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; this.dropGem(x + Math.cos(a) * 40, y + Math.sin(a) * 40, 2, false); }
+    }
+    if (plague > 0) {
+      if (z.plague && epi) {
+        const x = z.x, y = z.y, d = z.maxHp * 0.3;
+        this.timers.push({ at: this.elapsed + 0.03, fn: () => this.blast(x, y, 75, d, 0xa9e34b, 120, true) });
+      }
+      let n = spread + (z.plague ? 1 : 0);
+      for (const o of this.queryRect(z.x - 130, z.y - 130, z.x + 130, z.y + 130)) {
+        if (n <= 0) break;
+        if (o.dead || o === z || o.plague) continue;
+        o.plague = true; o.bleedUntil = this.elapsed + 4; o.bleedDps = Math.max(o.bleedDps, plague); o.bleedOwner = null;
+        this.burst('acid', 3, o.x, o.y);
+        n--;
+      }
+    }
+  }
+
+  /** Пульсация меток охотника. */
+  private markPulses(dt: number) {
+    this.markPulse -= dt;
+    if (this.markPulse > 0) return;
+    this.markPulse = 0.45;
+    for (const z of this.zombies) if (z.marked && !z.dead) this.ring(z.x, z.y, z.r + 14, 0xff6b6b, 0.4, 3);
+  }
+
+  /** Аркан: всё внутри петли стягивается в узел и оглушается. */
+  private castLasso(poly: { x: number; y: number }[], pl: Player) {
+    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity, cx = 0, cy = 0;
+    for (const p of poly) { x1 = Math.min(x1, p.x); y1 = Math.min(y1, p.y); x2 = Math.max(x2, p.x); y2 = Math.max(y2, p.y); cx += p.x; cy += p.y; }
+    cx /= poly.length; cy /= poly.length;
+    const st = pl.stats;
+    let caught = 0;
+    for (const z of this.queryRect(x1, y1, x2, y2)) {
+      if (z.dead || !pointInPoly(z.x, z.y, poly)) continue;
+      caught++;
+      if (!z.boss && !z.air) {
+        const dx = cx - z.x, dy = cy - z.y, d = Math.hypot(dx, dy) || 1;
+        z.kx = (dx / d) * Math.min(750, d * 6); z.ky = (dy / d) * Math.min(750, d * 6);
+        z.stunT = Math.max(z.stunT, st.lassoStun); z.hookT = this.elapsed + 0.6;
+      }
+      this.damage(z, st.lassoDmg + st.bladeDamage * 0.3);
+    }
+    this.vfx.poly(this.elapsed, poly, 0x8ce99a);
+    const step = Math.max(1, Math.floor(poly.length / 40));
+    this.E('P', poly.filter((_, i) => i % step === 0).flatMap((p) => [p.x | 0, p.y | 0]));
+    this.ring(cx, cy, 40, 0x8ce99a, 0.4, 5);
+    this.snd('throw', 1, cx, cy, 0.6);
+    if (st.syn.funnel) this.addVortex(cx, cy, pl);
+    if (caught >= 4) this.text(cx, cy, `АРКАН ×${caught}`, '#8ce99a', 22);
   }
 
   /** @returns true если зомби убит */
@@ -939,6 +1291,7 @@ export class GameScene extends Phaser.Scene {
       this.E('o', ZTYPES.indexOf(z.type), z.x | 0, z.y | 0, z.lvl);
     } else this.ring(z.x, z.y, z.r + 8, ZLOOK[z.type].color, 0.2);
     if (z.boss) { this.bossKills++; for (const p of this.players) p.rerolls++; }
+    this.onKillItems(z);
     for (const p of this.alivePlayers()) {
       if (p.stats.healEvery && ++p.killsForHeal >= p.stats.healEvery) { p.killsForHeal = 0; p.hp = Math.min(p.stats.maxHp, p.hp + 4); }
     }
@@ -954,6 +1307,7 @@ export class GameScene extends Phaser.Scene {
       if (!z.dead && (z.x - x) ** 2 + (z.y - y) ** 2 < (BOMB_R + z.r) ** 2) this.damage(z, 30, Math.atan2(z.y - y, z.x - x), 380);
     }
     for (const p of this.alivePlayers()) if (Math.hypot(p.x - x, p.y - y) < BOMB_R + PLAYER_R) this.hurt(p, 18 * this.dmgScale);
+    this.igniteNear(x, y, BOMB_R);
   }
 
   /** Падение в пропасть. */
@@ -994,6 +1348,14 @@ export class GameScene extends Phaser.Scene {
 
   private hurt(p: Player, amount: number) {
     if (p.inv > 0 || this.over || !p.alive || this.god) return;
+    if (p.stats.wardCd > 0 && p.wardAt <= this.elapsed) {
+      p.wardAt = this.elapsed + p.stats.wardCd; p.inv = 0.8;
+      this.text(p.x, p.y - 30, 'ОБЕРЕГ', '#ffe066', 18);
+      this.ring(p.x, p.y, 170, 0xffe066, 0.45, 5);
+      this.snd('bell', 0.7, p.x, p.y, 1.4);
+      for (const z of this.queryRect(p.x - 170, p.y - 170, p.x + 170, p.y + 170)) if (!z.dead) this.damage(z, 4, Math.atan2(z.y - p.y, z.x - p.x), 700);
+      return;
+    }
     p.hp -= amount;
     // удар по герою срезает серию вдвое
     if (this.combo >= 4) { this.combo = Math.floor(this.combo / 2); this.toast(`💢 Комбо сбито: ${this.combo}`, 900); }
@@ -1037,7 +1399,7 @@ export class GameScene extends Phaser.Scene {
     return a.length ? a[Math.floor(Math.random() * a.length)] : this.me;
   }
 
-  private spawnZombie(type: ZType, opts: { angle?: number; extra?: number; at?: { x: number; y: number }; final?: boolean; around?: Player; dormant?: boolean; exact?: boolean } = {}): Zombie | null {
+  private spawnZombie(type: ZType, opts: { angle?: number; extra?: number; at?: { x: number; y: number }; final?: boolean; around?: Player; dormant?: boolean; exact?: boolean; pack?: number } = {}): Zombie | null {
     const d = ZDEF[type];
     if (this.zombies.length >= MAX_ZOMBIES && !d.boss) return null;
     const around = opts.around ?? (opts.at ? this.nearestPlayer(opts.at.x, opts.at.y, true) : this.randomAlive());
@@ -1056,7 +1418,13 @@ export class GameScene extends Phaser.Scene {
       shield: type === 'shield' ? 2 : 0, bleedUntil: 0, bleedDps: 0, bleedOwner: null, boomCd: 0,
       tgtX: 0, tgtY: 0, jx0: 0, jy0: 0, air: false, vsx: 0, vsy: 0, vrot: 0, valpha: 0, vflags: 0,
       awake: opts.dormant ? false : true, wakeT: Math.random() * 0.3,
+      pack: opts.pack ?? 0, cracks: 0, stunT: 0, marked: false, plague: false, repCd: 0, bumpCd: 0, hookT: 0,
     };
+    // стая идёт одним темпом — так толпа держится кучкой
+    if (opts.pack) {
+      const ps = this.packSpeed.get(opts.pack);
+      if (ps === undefined) this.packSpeed.set(opts.pack, z.speed / d.speed); else z.speed = d.speed * ps;
+    }
     this.zombies.push(z);
     if (opts.at || d.boss) this.burst('dust', d.boss ? 30 : 5, pos.x, pos.y);
     return z;
@@ -1084,17 +1452,18 @@ export class GameScene extends Phaser.Scene {
     if (inWave > waveLen - 8 && this.wave < WAVES) return; // передышка
     const coopMul = this.players.length > 1 ? 1.4 : 1;
     const w = this.wave;
-    const rate = Math.min(32 * coopMul, (1 + w * 1.2 + (w * w) * 0.19) * this.stage.rateMul * coopMul);
+    const rate = Math.min(18 * coopMul, (0.7 + w * 0.7 + (w * w) * 0.1) * this.stage.rateMul * coopMul);
     this.spawnAcc += rate * dt;
-    // группами по 3–7, а не по одному
-    while (this.spawnAcc >= 5) {
-      const n = 3 + Math.floor(Math.random() * 5);
+    // стаями по 5–10: идут кучкой одним темпом
+    while (this.spawnAcc >= 8) {
+      const n = 5 + Math.floor(Math.random() * 6);
       this.spawnAcc -= n;
       const type = this.pickType();
       const around = this.randomAlive();
       const pos = this.findSpawn(around);
       if (!pos) continue;
-      for (let i = 0; i < n; i++) this.spawnZombie(i === 0 || Math.random() < 0.6 ? type : this.pickType(), { at: pos, around });
+      const pack = ++this.packSeq;
+      for (let i = 0; i < n; i++) this.spawnZombie(i === 0 || Math.random() < 0.7 ? type : this.pickType(), { at: pos, around, pack });
     }
   }
 
@@ -1113,21 +1482,30 @@ export class GameScene extends Phaser.Scene {
     // орда-кольцо на волнах 3 и 7, отряд толстяков на 4 и 8
     if (w === 3 || w === 7) {
       for (const pl of this.alivePlayers()) {
-        const n = 20 + w * 4;
-        for (let i = 0; i < n; i++) this.spawnZombie(i % 3 === 0 ? this.pickType() : i % 2 ? 'runner' : 'walker', { angle: (i / n) * Math.PI * 2, extra: 60, around: pl });
+        // орда — 4 стаи с разных сторон
+        for (let k = 0; k < 4; k++) {
+          const pack = ++this.packSeq, n = 4 + Math.floor(w * 0.8), a0 = (k / 4) * Math.PI * 2;
+          for (let i = 0; i < n; i++) this.spawnZombie(i % 3 === 0 ? this.pickType() : i % 2 ? 'runner' : 'walker', { angle: a0 + (i / n - 0.5) * 0.5, extra: 60, around: pl, pack });
+        }
       }
     }
     if (w === 4 || w === 8) {
       const pl = this.randomAlive(), pos = this.findSpawn(pl);
-      if (pos) for (let i = 0; i < (w === 4 ? 3 : 5); i++) this.spawnZombie('brute', { at: pos, around: pl });
+      const pack = ++this.packSeq;
+      if (pos) for (let i = 0; i < (w === 4 ? 2 : 4); i++) this.spawnZombie('brute', { at: pos, around: pl, pack });
     }
   }
 
   // ---------- Пространственная сетка ----------
   private buildGrid() {
     this.grid.clear();
+    this.packC.clear();
     for (const z of this.zombies) {
       if (z.dead) continue;
+      if (z.pack && z.awake) {
+        const c = this.packC.get(z.pack);
+        if (c) { c.x += z.x; c.y += z.y; c.n++; } else this.packC.set(z.pack, { x: z.x, y: z.y, n: 1 });
+      }
       const k = key2(Math.floor(z.x / CELL), Math.floor(z.y / CELL));
       const b = this.grid.get(k);
       if (b) b.push(z); else this.grid.set(k, [z]);
@@ -1192,8 +1570,11 @@ export class GameScene extends Phaser.Scene {
     this.spawn(dt);
     if (this.stage.gen.graves[1] > 0) this.graves(dt);
     this.buildGrid();
-    for (const z of this.zombies) if (!z.dead) this.updateZombie(z, dt);
-    this.updateProjs(dt);
+    // Хронос: время для зомби почти стоит
+    const zdt = this.chronoUntil > this.elapsed ? dt * 0.12 : dt;
+    for (const z of this.zombies) if (!z.dead) this.updateZombie(z, zdt);
+    this.updateProps(dt);
+    this.updateProjs(zdt);
     this.updateBooms(dt);
     this.updateShapes(dt);
     this.tickCombo(dt);
@@ -1201,6 +1582,7 @@ export class GameScene extends Phaser.Scene {
     const nowMs = performance.now();
     for (const st of this.strokes.values()) if (st.pts.length === 1 && nowMs - st.lastT > 500) this.chargeStroke(st);
     for (const p of this.alivePlayers()) this.trinkets(p, dt);
+    this.markPulses(dt);
     this.burnTrails(dt);
     this.collectGems(dt);
     this.zombies = this.zombies.filter((z) => !z.dead);
@@ -1380,7 +1762,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (z.bleedUntil > this.elapsed) {
       z.hp -= z.bleedDps * dt;
-      if (Math.random() < dt * 3) this.vfx.burst('gore', 1, z.x, z.y);
+      if (Math.random() < dt * 3) this.vfx.burst(z.plague ? 'acid' : 'gore', 1, z.x, z.y);
       if (z.hp <= 0) {
         const o = z.bleedOwner;
         if (o?.alive && o.stats.syn.thirst) o.hp = Math.min(o.stats.maxHp, o.hp + 1);
@@ -1417,7 +1799,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     let ghost = false;
-    switch (z.type) {
+    if (z.stunT > 0) {
+      z.stunT -= dt; sp = 0;
+      if (z.type === 'ghost') ghost = true;
+      if (Math.random() < dt * 5) this.vfx.burst('spark', 1, z.x, z.y - z.r);
+    } else switch (z.type) {
       case 'charger':
       case 'boar':
         z.stateT -= dt;
@@ -1531,6 +1917,19 @@ export class GameScene extends Phaser.Scene {
         steer();
     }
 
+    // стая: держимся ближе к своим, пока цель далеко
+    if (z.pack && z.state === 'walk' && !ghost && z.stunT <= 0 && d > 170) {
+      const c = this.packC.get(z.pack);
+      if (c && c.n > 1) {
+        const cx = c.x / c.n - z.x, cy = c.y / c.n - z.y, cd = Math.hypot(cx, cy);
+        if (cd > 36) {
+          const k = Math.min(0.4, (cd - 36) / 220);
+          mx = mx * (1 - k) + (cx / cd) * k; my = my * (1 - k) + (cy / cd) * k;
+          const l = Math.hypot(mx, my) || 1; mx /= l; my /= l;
+        }
+      }
+    }
+
     if (z.state === 'walk' && !ghost) {
       z.chkT -= dt;
       if (z.chkT <= 0) {
@@ -1571,8 +1970,26 @@ export class GameScene extends Phaser.Scene {
           const dist = Math.sqrt(dd);
           const push = ((min - dist) / dist) * 0.5 * (o.r / (z.r + o.r));
           z.x += ox * push; z.y += oy * push;
+          // летящий зомби передаёт импульс: толпа валится как кегли
+          if (knockSpd > 210 && o.bumpCd <= this.elapsed && !o.heavy && !o.boss) this.bonk(z, o, knockSpd);
+          if (z.dead) return;
         }
       }
+      // в героя не влезаем: тела плотные
+      for (const p of this.players) {
+        if (!p.alive || ghost || Math.abs(z.lvl - p.lvl) > 0.5) continue;
+        const ox = z.x - p.x, oy = z.y - p.y, min = z.r + PLAYER_R - 3, dd = ox * ox + oy * oy;
+        if (dd >= min * min || dd < 0.01) continue;
+        const dist = Math.sqrt(dd);
+        z.x = p.x + (ox / dist) * min; z.y = p.y + (oy / dist) * min;
+        if (p.stats.repulseKnock > 0 && z.repCd <= this.elapsed) {
+          z.repCd = this.elapsed + 0.7;
+          this.vfx.burst('magic', 3, z.x, z.y);
+          if (this.damage(z, p.stats.repulseDmg, Math.atan2(oy, ox), p.stats.repulseKnock)) continue;
+          if (z.heavy) { z.x += (ox / dist) * 24; z.y += (oy / dist) * 24; }
+        }
+      }
+      if (z.dead) return;
       if (!ghost) {
         const flung = knockSpd > 140 && !z.heavy;
         const hitWall = this.world.resolve(z, z.r, flung);
@@ -1598,11 +2015,12 @@ export class GameScene extends Phaser.Scene {
       if (z.type !== 'bomber') {
         for (const p of this.players) {
           if (!p.alive || p.inv > 0) continue;
-          if (Math.hypot(p.x - z.x, p.y - z.y) < z.r + PLAYER_R && (ghost || Math.abs(z.lvl - p.lvl) <= 0.5)) this.hurt(p, z.dmg * this.dmgScale);
+          if (z.stunT <= 0 && Math.hypot(p.x - z.x, p.y - z.y) < z.r + PLAYER_R && (ghost || Math.abs(z.lvl - p.lvl) <= 0.5)) this.hurt(p, z.dmg * this.dmgScale * p.stats.contactMul);
         }
       }
     }
 
+    if (z.dead) return;
     const moving = sp > 1 && !z.air;
     if (moving) z.phase += dt * (5 + sp * 0.035);
     const wob = moving ? Math.sin(z.phase) * 0.14 : 0;
@@ -1625,6 +2043,8 @@ export class GameScene extends Phaser.Scene {
     if (z.flash > 0) { z.flash -= dt; z.img.setTintFill(0xffffff); flags |= ZF.FLASH; }
     else if (['windup', 'slam', 'charge', 'fuse'].includes(z.state)) { z.img.setTint(0xff8787); flags |= ZF.RED; }
     else if (z.slowUntil > this.elapsed) { z.img.setTint(0x9fd4ff); flags |= ZF.FROST; }
+    else if (z.plague && z.bleedUntil > this.elapsed) z.img.setTint(0xb8e986);
+    else if (z.stunT > 0) z.img.setTint(0xd0bfff);
     else z.img.clearTint();
     if (z.type === 'shield' && z.shield === 0) flags |= ZF.BROKEN;
     if (z.boss) flags |= ZF.BOSS;
@@ -1659,9 +2079,34 @@ export class GameScene extends Phaser.Scene {
   /** Копья/осколки, мины, вихри, волны. */
   private updateShapes(dt: number) {
     for (const b of this.bolts) {
+      if (b.homing) {
+        // душа доворачивает к ближайшему ещё не задетому
+        let best: Zombie | null = null, bd = 420 * 420;
+        for (const z of this.queryRect(b.x - 420, b.y - 420, b.x + 420, b.y + 420)) {
+          if (z.dead || b.hit.has(z)) continue;
+          const dd = (z.x - b.x) ** 2 + (z.y - b.y) ** 2;
+          if (dd < bd) { bd = dd; best = z; }
+        }
+        if (best) {
+          const cur = Math.atan2(b.vy, b.vx), want = Math.atan2(best.y - b.y, best.x - b.x);
+          const diff = Math.atan2(Math.sin(want - cur), Math.cos(want - cur));
+          const na = cur + Phaser.Math.Clamp(diff, -7 * dt, 7 * dt), sp = Math.hypot(b.vx, b.vy);
+          b.vx = Math.cos(na) * sp; b.vy = Math.sin(na) * sp;
+        }
+        if (Math.random() < dt * 20) this.vfx.burst('heal', 1, b.x, b.y);
+      }
+      const ox = b.x, oy = b.y;
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+      if (b.kind === 9) b.img.setRotation(b.img.rotation + dt * 12); else b.img.setRotation(Math.atan2(b.vy, b.vx));
+      if (b.life > 0 && b.bounces > 0 && this.world.solidAtPx(b.x, b.y)) {
+        const sx = this.world.solidAtPx(b.x, oy), sy = this.world.solidAtPx(ox, b.y);
+        if (sx || !sy) b.vx = -b.vx;
+        if (sy || !sx) b.vy = -b.vy;
+        b.x = ox; b.y = oy; b.bounces--; b.hit.clear();
+        this.burst('spark', 4, b.x, b.y); this.snd('clank', 0.5, b.x, b.y, 1.6);
+      }
       b.img.setPosition(b.x, b.y);
-      if (b.life <= 0 || this.world.solidAtPx(b.x, b.y)) { b.dead = true; b.img.destroy(); this.vfx.burst('spark', 4, b.x, b.y); continue; }
+      if (b.life <= 0 || (!b.homing && this.world.solidAtPx(b.x, b.y))) { b.dead = true; b.img.destroy(); this.vfx.burst('spark', 4, b.x, b.y); continue; }
       const st = b.owner.stats, ang = Math.atan2(b.vy, b.vx);
       for (const z of this.queryRect(b.x - 50, b.y - 50, b.x + 50, b.y + 50)) {
         if (z.dead || b.hit.has(z) || (z.x - b.x) ** 2 + (z.y - b.y) ** 2 > (z.r + 10) ** 2) continue;
@@ -1783,6 +2228,51 @@ export class GameScene extends Phaser.Scene {
   private trinkets(p: Player, dt: number) {
     const s = p.stats;
     const { x: px, y: py } = p;
+    // Якорь
+    p.stillT = p.moving > 0.1 ? 0 : p.stillT + dt;
+    const wasRooted = p.rooted;
+    p.rooted = s.anchorMul > 0 && p.stillT >= 0.6;
+    if (p.rooted && !wasRooted) { this.ring(px, py, 42, 0xadb5bd, 0.4, 5); this.burst('dust', 6, px, py); }
+    // Метка охотника
+    if (s.markCd > 0) {
+      p.markT -= dt;
+      if (p.markT <= 0) {
+        p.markT = s.markCd;
+        let best: Zombie | null = null;
+        for (const z of this.queryRect(px - 480, py - 480, px + 480, py + 480)) {
+          if (z.dead || z.boss || z.marked || !z.awake) continue;
+          if (!best || z.maxHp > best.maxHp) best = z;
+        }
+        if (best) { best.marked = true; this.text(best.x, best.y - 30, 'МЕТКА', '#ff6b6b', 16); this.snd('charge', 0.5, best.x, best.y, 1.3); }
+      }
+    }
+    // Тотем
+    if (s.totemCd > 0) {
+      p.totemT -= dt;
+      if (p.totemT <= 0) { p.totemT = s.totemCd; this.addProp(6, px, py + 6, p, s.totemDur); this.snd('land', 0.6, px, py); }
+    }
+    // Бочкарь
+    if (s.barrelCd > 0) {
+      p.barrelT -= dt;
+      if (p.barrelT <= 0) {
+        p.barrelT = s.barrelCd;
+        for (let i = 0; i < 6; i++) {
+          const a = Math.random() * Math.PI * 2, d = 110 + Math.random() * 60;
+          const x = px + Math.cos(a) * d, y = py + Math.sin(a) * d;
+          if (this.world.solidAtPx(x, y) || this.world.kindAtPx(x, y) === K_PIT) continue;
+          this.addBarrel(x, y, p); this.snd('crate', 0.6, x, y, 0.7);
+          break;
+        }
+      }
+    }
+    // Хронос
+    if (s.chronoDur > 0 && this.combo >= 20 && p.chronoAt <= this.elapsed) {
+      p.chronoAt = this.elapsed + s.chronoCd;
+      this.chronoUntil = this.elapsed + s.chronoDur;
+      this.toast('⏳ Время замерло', 1200);
+      this.ring(px, py, 420, 0xa5d8ff, 0.7, 8);
+      this.snd('rune', 1, px, py, 0.7);
+    }
     if (s.auraRadius > 0) {
       p.auraTick += dt;
       if (p.auraTick >= 0.5) {
@@ -1881,6 +2371,10 @@ export class GameScene extends Phaser.Scene {
           this.vfx.burst('spark', 2, g.x, g.y);
           if (p === this.me) sfx.play('gem', 0.8); else this.E('s', 'gem', 0.8, g.x | 0, g.y | 0);
           this.gainXp(g.value * p.stats.xpMul * this.comboXp());
+          if (p.stats.greedDmg > 0 && p.greedCd <= this.elapsed) {
+            p.greedCd = this.elapsed + 0.15;
+            this.blast(p.x, p.y, p.stats.greedR, p.stats.greedDmg + g.value, 0xffd43b, 220, true);
+          }
         }
         g.value = -1;
       }
@@ -2226,6 +2720,7 @@ export class GameScene extends Phaser.Scene {
     this.vfx.draw(fg, this.elapsed);
 
     this.controls.render(this.hud, !this.paused && !this.over && this.me.alive);
+    this.look.follow(this.me.x, this.me.y);
     this.updateObjective();
 
     const me = this.me;
@@ -2271,11 +2766,12 @@ export class GameScene extends Phaser.Scene {
       // волны к точке удержания
       this.holdTick -= dt;
       if (this.holdTick <= 0) {
-        this.holdTick = Phaser.Math.Linear(3, 1.6, this.objProg);
+        this.holdTick = Phaser.Math.Linear(4.2, 2.6, this.objProg) * (this.players.length > 1 ? 0.8 : 1);
         const around = this.nearestPlayer(wx, wy, true);
         const pos = this.findSpawn(around, 0, undefined, undefined, TILE * (9 + Math.random() * 5));
-        const n = 3 + Math.floor(this.objIdx * 1.5 + this.objProg * 4);
-        if (pos && this.zombies.length < 190) for (let i = 0; i < n; i++) this.spawnZombie(this.pickType(), { at: pos, around });
+        const n = 3 + Math.floor(this.objIdx + this.objProg * 3);
+        const pack = ++this.packSeq;
+        if (pos && this.zombies.length < 120) for (let i = 0; i < n; i++) this.spawnZombie(this.pickType(), { at: pos, around, pack });
       }
     }
     if (this.objProg >= 1) this.completeObjective(wx, wy);
@@ -2301,11 +2797,14 @@ export class GameScene extends Phaser.Scene {
     const m = this.map!;
     for (const g of m.groups) {
       const types = this.stage.weights(g.p);
+      const pack = ++this.packSeq;
       for (let i = 0; i < g.n; i++) {
         let r = Math.random() * types.reduce((a, b) => a + b[1], 0), t: ZType = 'walker';
         for (const [k, v] of types) if ((r -= v) <= 0) { t = k; break; }
-        this.spawnZombie(t, { at: { x: (g.x + 0.5) * TILE, y: (g.y + 0.5) * TILE }, around: this.me, dormant: true });
+        this.spawnZombie(t, { at: { x: (g.x + 0.5) * TILE, y: (g.y + 0.5) * TILE }, around: this.me, dormant: true, pack });
       }
+      // у части групп — взрывная бочка: можно взорвать спящих
+      if (Math.random() < 0.45) this.addBarrel((g.x + 2.5) * TILE, (g.y + 0.5) * TILE, null);
     }
     for (const l of m.loot) this.dropGem((l.x + 0.5) * TILE, (l.y + 0.5) * TILE, 0, true);
     // страж выхода
@@ -2331,8 +2830,8 @@ export class GameScene extends Phaser.Scene {
     this.progress = this.storyProgress();
     this.entryTick -= dt;
     if (this.entryTick > 0) return;
-    this.entryTick = Phaser.Math.Linear(2.8, 1.3, this.progress) * (this.players.length > 1 ? 0.75 : 1);
-    if (this.zombies.length > 170) return;
+    this.entryTick = Phaser.Math.Linear(4, 2.2, this.progress) * (this.players.length > 1 ? 0.75 : 1);
+    if (this.zombies.length > 110) return;
     const near = this.map!.entries.filter((e) => this.alivePlayers().some((p) => {
       const d = Math.hypot((e.x + 0.5) * TILE - p.x, (e.y + 0.5) * TILE - p.y) / TILE;
       return d > 5 && d < 24;
@@ -2340,17 +2839,19 @@ export class GameScene extends Phaser.Scene {
     if (!near.length) {
       // нет лазов рядом — группа подходит из-за края экрана
       const around = this.randomAlive(), pos = this.findSpawn(around);
-      if (pos) for (let i = 0; i < 3 + Math.floor(this.progress * 4); i++) this.spawnZombie(this.pickType(), { at: pos, around });
+      const pack = ++this.packSeq;
+      if (pos) for (let i = 0; i < 3 + Math.floor(this.progress * 3); i++) this.spawnZombie(this.pickType(), { at: pos, around, pack });
       return;
     }
     const e = near[Math.floor(Math.random() * near.length)];
-    const n = 2 + Math.floor(Math.random() * (2 + this.progress * 4));
+    const n = 2 + Math.floor(Math.random() * (2 + this.progress * 3));
+    const pack = ++this.packSeq;
     const w = this.stage.weights(this.progress);
     const ex = (e.x + 0.5) * TILE, ey = (e.y + 0.5) * TILE;
     for (let i = 0; i < n; i++) {
       let r = Math.random() * w.reduce((a, b) => a + b[1], 0), t: ZType = 'walker';
       for (const [k, v] of w) if ((r -= v) <= 0) { t = k; break; }
-      this.timers.push({ at: this.elapsed + i * 0.35, fn: () => this.spawnZombie(t, { at: { x: ex, y: ey }, around: this.nearestPlayer(ex, ey, true), exact: true }) });
+      this.timers.push({ at: this.elapsed + i * 0.35, fn: () => this.spawnZombie(t, { at: { x: ex, y: ey }, around: this.nearestPlayer(ex, ey, true), exact: true, pack }) });
     }
     this.burst('dust', 10, ex, ey);
     this.snd('crate', 0.6, ex, ey, 0.6);

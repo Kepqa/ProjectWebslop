@@ -33,6 +33,12 @@ export const SYNERGIES: SynergyDef[] = [
   { id: 'echocross', icon: '♻️', name: 'Эхо-перекрёсток', a: 'echo', b: 'cross', desc: 'Эхо-разрез взрывается на пересечениях со следами' },
   { id: 'echofire', icon: '🔥', name: 'Пламя эха', a: 'echo', b: 'burn', desc: 'Эхо-разрез тоже оставляет огненный след' },
   { id: 'mirrormines', icon: '🎇', name: 'Зеркальные мины', a: 'mirror', b: 'mines', desc: 'Двойник тоже роняет мины' },
+  { id: 'funnel', icon: '🌀', name: 'Воронка', a: 'lasso', b: 'vortex', desc: 'Затянутая арканом петля оставляет в центре вихрь' },
+  { id: 'deadeye', icon: '☠️', name: 'Приговор', a: 'mark', b: 'execute', desc: 'Меченого клинок казнит с одного удара (кроме боссов)' },
+  { id: 'bowling', icon: '🎳', name: 'Страйк', a: 'barrel', b: 'pins', desc: 'Пнутая бочка катится, сбивая всех, и взрывается вдвое мощнее' },
+  { id: 'epidemic', icon: '☣️', name: 'Эпидемия', a: 'plague', b: 'rend', desc: 'Кровотечение заражает чумой, заражённые лопаются облаком' },
+  { id: 'timebreak', icon: '🕰️', name: 'Сломанные часы', a: 'chronos', b: 'rhythm', desc: 'Пока идёт Хронос — каждый свайп в такт' },
+  { id: 'brittlehook', icon: '🪝', name: 'Сшибка', a: 'hook', b: 'crack', desc: 'Стянутые крюком зомби получают трещину при столкновении' },
 ];
 
 export function activeSynergies(l: Levels) {
@@ -58,6 +64,13 @@ export interface Stats {
   vortexR: number; vortexDps: number; vortexDur: number;
   chargeMul: number;
   comboTime: number; frenzyDmg: number; finisher: number;
+  // необычные механики
+  hookPull: number; execute: number; crackDmg: number; rhythmMul: number; pactDmg: number;
+  parryMul: number; parryStun: number; pinsDmg: number; ballDmg: number; ballBounces: number;
+  trapDmg: number; trapHold: number; lassoDmg: number; lassoStun: number; lassoCd: number;
+  markCd: number; markGems: number; reaperEvery: number; reaperDmg: number; plagueDps: number; plagueSpread: number;
+  greedDmg: number; greedR: number; chronoDur: number; chronoCd: number; repulseKnock: number; repulseDmg: number; contactMul: number;
+  anchorMul: number; wardCd: number; totemCd: number; totemDur: number; totemDmg: number; barrelCd: number; barrelMul: number;
   syn: Record<string, boolean>;
 }
 
@@ -111,6 +124,26 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'charge', kind: K.f, icon: '🎯', name: 'Заряд', max: 4,
     desc: (l) => l === 1 ? 'Задержи палец на месте 0.5с, затем режь: свайп ×2 урона и шире' : '+0.4 к множителю заряда' },
 
+  { id: 'hook', kind: K.s, icon: '🪝', name: 'Крюк', max: 3,
+    desc: (l) => l === 1 ? 'Отпустил палец — все задетые свайпом зомби рывком стягиваются к концу следа и бьются лбами' : 'Рывок сильнее, удар при столкновении больнее' },
+  { id: 'execute', kind: K.s, icon: '🪓', name: 'Казнь', max: 3, desc: (l) => `Клинок мгновенно добивает зомби с HP ниже ${12 + 6 * l}% (+1 энергия)` },
+  { id: 'crack', kind: K.s, icon: '💎', name: 'Трещина', max: 4,
+    desc: (l) => l === 1 ? 'Каждый удар клинком — трещина. Третья раскалывает зомби, осколки ранят соседей' : 'Осколки больнее и разлетаются шире' },
+  { id: 'rhythm', kind: K.s, icon: '🥁', name: 'Ритм', max: 3,
+    desc: (l) => l === 1 ? 'Начинай свайпы ровно, раз в 0.35–0.9с: каждый 3-й в такт режет ×1.9 и шире' : 'Свайп в такт ещё сильнее' },
+  { id: 'pact', kind: K.s, icon: '🩸', name: 'Кровавый пакт', max: 3,
+    desc: (l) => l === 1 ? 'Без энергии свайп режет за счёт здоровья. Пока HP ниже половины — +25% урона клинка' : '+25% урона при HP ниже половины' },
+  { id: 'parry', kind: K.s, icon: '🛡️', name: 'Контрудар', max: 3,
+    desc: (l) => l === 1 ? 'Удар по зомби в замахе, рывке, заряде прыжка или с зажжённым фитилём — ×2.5 урона и оглушение' : 'Сильнее и дольше оглушает' },
+  { id: 'pins', kind: K.s, icon: '🎳', name: 'Кегли', max: 4,
+    desc: (l) => l === 1 ? 'Отброшенные зомби — живые снаряды: ранят всех, в кого врезаются, и сбивают их цепочкой' : 'Удар кеглей сильнее, отброс дальше' },
+  { id: 'ricochet', kind: K.f, icon: '🎱', name: 'Рикошет', max: 4,
+    desc: (l) => l === 1 ? 'Конец свайпа запускает шар, который отскакивает от стен 3 раза' : '+1 отскок, больше урона' },
+  { id: 'trap', kind: K.f, icon: '🪤', name: 'Капкан', max: 3,
+    desc: (l) => l === 1 ? 'Начало длинного свайпа ставит капкан: первый наступивший зомби схвачен, соседей тянет к нему' : 'Держит дольше, ранит сильнее' },
+  { id: 'lasso', kind: K.f, icon: '➰', name: 'Аркан', max: 3,
+    desc: (l) => l === 1 ? 'Обведи толпу петлёй — все внутри стягиваются в узел и оглушаются (без затрат энергии)' : 'Чаще, больнее, дольше оглушает' },
+
   // --- Тринкеты ---
   { id: 'censer', kind: K.t, icon: '🏮', name: 'Гнилое кадило', max: 5, desc: (l) => l === 1 ? 'Широкая аура вокруг вас жжёт зомби' : 'Аура шире и сильнее' },
   { id: 'bones', kind: K.t, icon: '🦴', name: 'Хоровод костей', max: 5, desc: (l) => l === 1 ? 'Вокруг вас кружит кость и бьёт зомби' : '+1 кость, больше урона' },
@@ -123,6 +156,20 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'grenade', kind: K.t, icon: '💣', name: 'Ржавая граната', max: 4, desc: (l) => l === 1 ? 'Раз в 5с бросает гранату в ближайшую толпу' : 'Гранаты чаще и мощнее' },
   { id: 'metronome', kind: K.t, icon: '⏱️', name: 'Метроном', max: 3, desc: () => 'Серия комбо держится на 0.6с дольше' },
   { id: 'finisher', kind: K.t, icon: '🧨', name: 'Финишер', max: 3, desc: () => 'Конец серии от 10 убийств взрывается вокруг вас (урон растёт с серией)' },
+  { id: 'mark', kind: K.t, icon: '🎯', name: 'Метка охотника', max: 3,
+    desc: (l) => l === 1 ? 'Раз в 6с метит самого крепкого зомби рядом. Его смерть — взрыв и россыпь опыта' : 'Метка чаще, добыча богаче' },
+  { id: 'reaper', kind: K.t, icon: '💀', name: 'Жнец', max: 4, desc: (l) => `Каждое ${Math.max(5, 12 - 2 * l)}-е убийство выпускает душу — она сама ищет цель и пронзает` },
+  { id: 'plague', kind: K.t, icon: '🦠', name: 'Чума', max: 4,
+    desc: (l) => l === 1 ? 'Убитый зомби заражает соседа. Заражённый гниёт и, умирая, заражает дальше — эпидемия' : '+1 заражённый, гниль сильнее' },
+  { id: 'greed', kind: K.t, icon: '💰', name: 'Жадность', max: 3, desc: (l) => l === 1 ? 'Подобранный опыт взрывается вокруг вас — собирай кристаллы в гуще толпы' : 'Взрывы от опыта шире и больнее' },
+  { id: 'chronos', kind: K.t, icon: '⏳', name: 'Хронос', max: 3, desc: (l) => `Серия ×20 останавливает время для зомби почти на ${2 + l}с (раз в ${30 - 4 * l}с)` },
+  { id: 'repulse', kind: K.t, icon: '🫧', name: 'Отталкивающее поле', max: 4,
+    desc: () => 'Коснувшийся вас зомби отлетает кеглей и получает урон; урон от касаний −12%' },
+  { id: 'anchor', kind: K.t, icon: '⚓', name: 'Якорь', max: 3, desc: () => 'Постой 0.6с — пустишь корни: +30% урона клинка, пока не сдвинешься' },
+  { id: 'ward', kind: K.t, icon: '🪬', name: 'Оберег', max: 3, desc: (l) => `Раз в ${21 - 4 * l}с полностью гасит удар и отшвыривает всех вокруг` },
+  { id: 'totem', kind: K.t, icon: '🗿', name: 'Тотем', max: 4, desc: (l) => l === 1 ? 'Раз в 10с ставит тотем, который бьёт молнией ближайших зомби' : 'Тотем чаще, дольше, сильнее' },
+  { id: 'barrel', kind: K.t, icon: '🛢️', name: 'Бочкарь', max: 3,
+    desc: (l) => l === 1 ? 'Раз в 10с рядом падает взрывная бочка. Все бочки взрываются на 40% мощнее' : 'Бочки чаще и мощнее' },
   { id: 'bell', kind: K.t, icon: '🔔', name: 'Колокол паники', max: 3, desc: () => 'HP ниже 35% и вас бьют — звон отбрасывает и ранит всех рядом (раз в 25с)' },
 ];
 
@@ -241,6 +288,26 @@ function baseStats(l: Levels): Stats {
     vortexDur: 1.1 + 0.2 * v('vortex') + (syn.tornado ? 1 : 0),
     chargeMul: v('charge') ? 1.6 + 0.4 * v('charge') : 0,
     comboTime: 0.6 * v('metronome'), frenzyDmg: v('frenzy'), finisher: v('finisher'),
+    hookPull: v('hook') ? 380 + 140 * v('hook') : 0,
+    execute: v('execute') ? 0.12 + 0.06 * v('execute') : 0,
+    crackDmg: v('crack') ? 0.25 + 0.1 * v('crack') : 0,
+    rhythmMul: v('rhythm') ? 1.5 + 0.4 * v('rhythm') : 0,
+    pactDmg: 0.25 * v('pact'),
+    parryMul: v('parry') ? 2 + 0.5 * v('parry') : 0, parryStun: 1 + 0.4 * v('parry'),
+    pinsDmg: v('pins') ? 3 + 2.5 * v('pins') : 0,
+    ballDmg: v('ricochet') ? 4 + 3 * v('ricochet') : 0, ballBounces: 2 + v('ricochet'),
+    trapDmg: v('trap') ? 6 + 5 * v('trap') : 0, trapHold: 2 + 0.6 * v('trap'),
+    lassoDmg: v('lasso') ? 3 + 3 * v('lasso') : 0, lassoStun: 0.8 + 0.4 * v('lasso'), lassoCd: 4.6 - 0.6 * v('lasso'),
+    markCd: v('mark') ? 7 - v('mark') : 0, markGems: 3 + v('mark'),
+    reaperEvery: v('reaper') ? Math.max(5, 12 - 2 * v('reaper')) : 0, reaperDmg: 6 + 4 * v('reaper'),
+    plagueDps: v('plague') ? 2 + 1.5 * v('plague') : 0, plagueSpread: v('plague'),
+    greedDmg: v('greed') ? 3 + 3 * v('greed') : 0, greedR: 60 + 18 * v('greed'),
+    chronoDur: v('chronos') ? 2 + v('chronos') : 0, chronoCd: 30 - 4 * v('chronos'),
+    repulseKnock: v('repulse') ? 380 + 80 * v('repulse') : 0, repulseDmg: 2 + 2 * v('repulse'), contactMul: Math.max(0.4, 1 - 0.12 * v('repulse')),
+    anchorMul: 0.3 * v('anchor'),
+    wardCd: v('ward') ? 21 - 4 * v('ward') : 0,
+    totemCd: v('totem') ? 11 - v('totem') : 0, totemDur: 5 + v('totem'), totemDmg: 4 + 3 * v('totem'),
+    barrelCd: v('barrel') ? 12 - 2 * v('barrel') : 0, barrelMul: 1 + 0.4 * v('barrel'),
     syn,
   };
 }

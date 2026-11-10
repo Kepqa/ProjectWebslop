@@ -214,13 +214,18 @@ export class Hud {
     this.energyBar.classList.add('empty');
   }
 
+  /** Слоты как в VS: 6 под свайп/формы, 4 под тринкеты; уровень — точками, пустые слоты видны. */
   setItems(levels: Levels) {
-    const it = (u: UpgradeDef) => `<span title="${u.name}">${u.icon}<sub>${levels[u.id]}</sub></span>`;
-    const owned = UPGRADES.filter((u) => levels[u.id]);
-    const blade = owned.filter((u) => u.kind !== 'trinket').map(it).join('');
-    const trink = owned.filter((u) => u.kind === 'trinket').map(it).join('');
+    const owned = Object.keys(levels).map((id) => byId(id)).filter((u): u is UpgradeDef => !!u && (levels[u.id] ?? 0) > 0);
+    const slot = (u: UpgradeDef | undefined, kind: string) => {
+      if (!u) return `<span class="slot empty ${kind}"></span>`;
+      const lv = levels[u.id], pips = Array.from({ length: u.max }, (_, i) => `<b class="${i < lv ? 'on' : ''}"></b>`).join('');
+      return `<span class="slot ${kind}${lv >= u.max ? ' max' : ''}" title="${u.name} ${lv}/${u.max}"><em>${u.icon}</em><i class="pips">${pips}</i></span>`;
+    };
+    const blade = owned.filter((u) => u.kind !== 'trinket'), trink = owned.filter((u) => u.kind === 'trinket');
+    const row = (list: UpgradeDef[], n: number, kind: string) => Array.from({ length: n }, (_, i) => slot(list[i], kind)).join('');
     const syn = activeSynergies(levels).map((x) => `<span class="syn" title="${x.name}: ${x.desc}">${x.icon}</span>`).join('');
-    this.itemsEl.innerHTML = blade + (trink ? '<i class="sep"></i>' + trink : '') + (syn ? '<i class="sep"></i>' + syn : '');
+    this.itemsEl.innerHTML = `<div class="slots">${row(blade, SLOTS.blade, 'blade')}</div><div class="slots">${row(trink, SLOTS.trinket, 'trinket')}${syn ? `<i class="sep"></i>${syn}` : ''}</div>`;
   }
 
   toast(msg: string, ms = 1600) {

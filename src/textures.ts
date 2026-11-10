@@ -178,6 +178,44 @@ export function makeTextures(scene: Phaser.Scene) {
   g.lineStyle(1.5 * s, 0xe67700).strokePoints(star, true);
   gen('mine', 22, 22);
 
+  // Взрывная бочка (вид сверху)
+  g.fillStyle(0x000000, 0.35).fillEllipse(16 * s, 19 * s, 30 * s, 12 * s);
+  g.fillStyle(0xc92a2a).fillCircle(15 * s, 15 * s, 13 * s);
+  g.lineStyle(2.5 * s, 0x5c0a0a).strokeCircle(15 * s, 15 * s, 13 * s);
+  g.lineStyle(1.5 * s, 0x862e2e).strokeCircle(15 * s, 15 * s, 8.5 * s);
+  g.fillStyle(0xffd43b).fillTriangle(15 * s, 8 * s, 21 * s, 19 * s, 9 * s, 19 * s);
+  g.fillStyle(0x1a1a1a).fillRect(14 * s, 11 * s, 2 * s, 4.5 * s).fillRect(14 * s, 16.5 * s, 2 * s, 1.6 * s);
+  gen('barrel', 32, 32);
+
+  // Тотем: каменный столб с глазом
+  g.fillStyle(0x000000, 0.35).fillEllipse(14 * s, 25 * s, 24 * s, 9 * s);
+  g.fillStyle(0x495057).fillRoundedRect(5 * s, 2 * s, 18 * s, 23 * s, 4 * s);
+  g.fillStyle(0x343a40).fillRect(5 * s, 10 * s, 18 * s, 3 * s);
+  g.fillStyle(0x74c0fc).fillCircle(14 * s, 7 * s, 3 * s).fillCircle(14 * s, 18 * s, 2.2 * s);
+  g.lineStyle(1.5 * s, 0x212529).strokeRoundedRect(5 * s, 2 * s, 18 * s, 23 * s, 4 * s);
+  gen('totem', 28, 28);
+
+  // Душа (самонаводящийся снаряд)
+  g.fillStyle(0xb2f2bb, 0.35).fillCircle(9 * s, 9 * s, 9 * s);
+  g.fillStyle(0xd3f9d8).fillCircle(9 * s, 9 * s, 5.5 * s);
+  g.fillStyle(0x2b8a3e).fillCircle(7 * s, 8 * s, 1.2 * s).fillCircle(11 * s, 8 * s, 1.2 * s);
+  gen('soul', 18, 18);
+
+  // Капкан
+  g.lineStyle(2.5 * s, 0x868e96).strokeCircle(13 * s, 13 * s, 10 * s);
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    g.fillStyle(0xced4da).fillTriangle(13 * s + Math.cos(a) * 10 * s, 13 * s + Math.sin(a) * 10 * s, 13 * s + Math.cos(a + 0.25) * 6 * s, 13 * s + Math.sin(a + 0.25) * 6 * s, 13 * s + Math.cos(a - 0.25) * 6 * s, 13 * s + Math.sin(a - 0.25) * 6 * s);
+  }
+  g.fillStyle(0x495057).fillCircle(13 * s, 13 * s, 3 * s);
+  gen('trap', 26, 26);
+
+  // Рикошет-шар
+  g.fillStyle(0xf8f9fa).fillCircle(8 * s, 8 * s, 7 * s);
+  g.fillStyle(0x4dabf7).fillCircle(8 * s, 8 * s, 3.2 * s);
+  g.lineStyle(1.5 * s, 0x1c7ed6).strokeCircle(8 * s, 8 * s, 7 * s);
+  gen('ball', 16, 16);
+
   g.destroy();
 }
 

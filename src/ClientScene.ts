@@ -12,7 +12,7 @@ import { recordLife, unlockedSet } from './achievements';
 import { S, WALK_FRAMES, ZTYPES, makeTextures, zOrigin } from './textures';
 import { World, K_FLOOR, K_TOXIC, K_DOOR, K_DOOROPEN, TILE, key2, type Body } from './world';
 import { Controls } from './controls';
-import { applyLook } from './look';
+import { Look } from './look';
 import { CHAPTERS, type StoryMap } from './story';
 import { BOMB_R, PLAYER_R, PLAYER_SPEED, RUN_MUL, SLAM_R, SWIPE_COST, SWIPE_MIN_SPEED, drawAura, drawBeacon, drawBurn, drawCharge, drawRevive, drawVitals, drawVortex, styleDowned } from './GameScene';
 
@@ -22,6 +22,9 @@ interface PState { x: number; y: number; lvl: number; rot: number; hp: number; m
 const SNAP_MS = 50;
 
 /** Гость в онлайн-коопе: рисует мир по снимкам хоста, своё движение и свайпы — локально. */
+/** Текстуры реплицируемых снарядов/предметов по kind. */
+const PROJ_TEX = ['acid', 'orb', 'acid', 'spear', 'shard', 'barrel', 'totem', 'soul', 'trap', 'ball', 'barrel'];
+
 export class ClientScene extends Phaser.Scene {
   private net!: Net;
   private hud!: Hud;
@@ -79,6 +82,7 @@ export class ClientScene extends Phaser.Scene {
   private wave = 0; private exitSeen = false; private objIdx = 0; private objProg = 0;
   private sc: number[] = [0, 0, 1, 0, 0];
   private controls!: Controls;
+  private look!: Look;
 
   init(data: { stage: number; seed: number; time?: number; mode?: 'survival' | 'story'; chapter?: number }) {
     this.stageIdx = data.stage; this.seed = data.seed;
@@ -125,7 +129,7 @@ export class ClientScene extends Phaser.Scene {
 
     this.cameras.main.startFollow(this.meImg, false, 1, 1);
     this.applyZoom();
-    applyLook(this.cameras.main);
+    this.look = new Look(this);
     this.scale.on('resize', this.applyZoom, this);
     session.onMsg = this.onMsg;
     session.onSnap = this.onSnap;
@@ -275,9 +279,10 @@ export class ClientScene extends Phaser.Scene {
     this.projs = ps; this.projAt = now;
     pool(this, this.projImgs, ps.length, 'acid', 7.5).forEach((img, i) => {
       const p = ps[i];
-      img.setTexture(p.kind === 1 ? 'orb' : p.kind === 3 ? 'spear' : p.kind === 4 ? 'shard' : 'acid');
-      if (p.kind === 2) img.setTint(0x66d9e8); else img.clearTint();
-      if (p.kind >= 3) img.setRotation(Math.atan2(p.vy, p.vx));
+      img.setTexture(PROJ_TEX[p.kind] ?? 'acid').setDepth(p.kind === 5 || p.kind === 6 || p.kind === 8 || p.kind === 10 ? 3 : 7.5);
+      if (p.kind === 2) img.setTint(0x66d9e8); else if (p.kind === 10) img.setTint(0xffa8a8); else img.clearTint();
+      if (p.kind === 3 || p.kind === 4) img.setRotation(Math.atan2(p.vy, p.vx));
+      else if (p.kind >= 5) img.setRotation(0);
     });
     pool(this, this.boomImgs, bs.length, 'boomerang', 6).forEach((img, i) => img.setPosition(bs[i].x, bs[i].y).setRotation(bs[i].rot));
   };
@@ -479,7 +484,8 @@ export class ClientScene extends Phaser.Scene {
       const p = this.projs[i];
       if (!p || !img.visible) return;
       img.setPosition(p.x + p.vx * ex, p.y + p.vy * ex);
-      if (p.kind < 3) img.setRotation(img.rotation + dt * 8);
+      if (p.kind < 3 || p.kind === 9) img.setRotation(img.rotation + dt * 8);
+      if (p.kind === 10) img.setScale((1 + Math.sin(now / 30) * 0.12) / S);
       if (p.kind < 2 && Math.random() < dt * 25) this.vfx.burst(p.kind === 1 ? 'magic' : 'acid', 1, img.x, img.y);
     });
 
@@ -535,6 +541,7 @@ export class ClientScene extends Phaser.Scene {
     this.hud.setBoss(this.hdr.boss?.[0] ?? null, this.hdr.boss?.[1] ?? 0);
 
     this.controls.render(this.hud, !this.paused && !this.over && this.alive);
+    this.look.follow(this.me.x, this.me.y);
     if (this.map && this.objIdx < this.objs.length) {
       const o = this.objs[this.objIdx], t = this.map.objectives[this.objIdx];
       const wx = (t.x + 0.5) * TILE, wy = (t.y + 0.5) * TILE;

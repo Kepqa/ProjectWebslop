@@ -320,12 +320,12 @@ export function genCity(seed: number, enterable: boolean, W = 110, H = 110): Sto
   }
   for (const o of objectives) clearAround(kind, W, H, o, 2);
   const groups: StoryMap['groups'] = [];
-  for (let n = 0; n < 26; n++) {
+  for (let n = 0; n < 20; n++) {
     const c = open[ri(0, open.length - 1)];
     const d = dist[I(c.x, c.y)];
     if (d < 12) continue;
     const p = Math.min(1, d / maxD);
-    groups.push({ x: c.x, y: c.y, n: 3 + Math.round(p * 4) + ri(0, 2), p });
+    groups.push({ x: c.x, y: c.y, n: 2 + Math.round(p * 3) + ri(0, 2), p });
   }
   const loot: Pt[] = [];
   for (const b of buildings) if (b.door && !objectives.some((o) => o.x >= b.x && o.x < b.x + b.w && o.y >= b.y && o.y < b.y + b.h) && r() < 0.5) loot.push({ x: b.x + 1 + ri(0, Math.max(0, b.w - 3)), y: b.y + 1 + ri(0, Math.max(0, b.h - 3)) });
@@ -388,9 +388,9 @@ export function genVillage(seed: number, W = 120, H = 120): StoryMap {
   const open: Pt[] = [];
   for (let y = 2; y < H - 2; y += 2) for (let x = 2; x < W - 2; x += 2) if (dist[I(x, y)] > 12) open.push({ x, y });
   const groups: StoryMap['groups'] = [];
-  for (let n = 0; n < 24 && open.length; n++) {
+  for (let n = 0; n < 18 && open.length; n++) {
     const c = open[ri(0, open.length - 1)], p = Math.min(1, dist[I(c.x, c.y)] / maxD);
-    groups.push({ x: c.x, y: c.y, n: 3 + Math.round(p * 3) + ri(0, 2), p });
+    groups.push({ x: c.x, y: c.y, n: 2 + Math.round(p * 3) + ri(0, 1), p });
   }
   const loot = farms.filter((f) => !objectives.includes(f)).map((f) => ({ x: f.x, y: f.y }));
   const exit = objectives[2];
@@ -403,15 +403,15 @@ const VILLAGE_PAL = { floor: [0x2e4423, 0x3a5a2e, 0x4a6b38], ramp: [0x3b5a2e, 0x
 const NOGEN = { plateau: 0, walls: [0, 0] as [number, number], crates: [0, 0] as [number, number], pits: false, maze: false, toxic: false, graves: [0, 0] as [number, number] };
 
 export const CITY_STAGE: StageDef = {
-  name: 'Город', desc: '', bg: '#101113', palette: CITY_PAL, gen: NOGEN, hpMul: 1.25, dmgMul: 1.15, rateMul: 1, bosses: ['brood'],
+  name: 'Город', desc: '', bg: '#101113', palette: CITY_PAL, gen: NOGEN, hpMul: 1.05, dmgMul: 1, rateMul: 1, bosses: ['brood'],
   weights: (p) => [['walker', 1], ['runner', p > 0.1 ? 0.3 : 0], ['spitter', p > 0.3 ? 0.15 : 0], ['bomber', p > 0.4 ? 0.1 : 0], ['charger', p > 0.45 ? 0.12 : 0], ['brute', p > 0.5 ? 0.07 : 0], ['jumper', p > 0.6 ? 0.1 : 0]],
 };
 export const LOOT_STAGE: StageDef = {
-  ...CITY_STAGE, name: 'Мародёрство', palette: { ...CITY_PAL, wallTop: 0x6b5a4f, wallFace: 0x3d332c }, hpMul: 1.45, dmgMul: 1.3, bosses: ['necro'],
+  ...CITY_STAGE, name: 'Мародёрство', palette: { ...CITY_PAL, wallTop: 0x6b5a4f, wallFace: 0x3d332c }, hpMul: 1.15, dmgMul: 1.08, bosses: ['necro'],
   weights: (p) => [['walker', 1], ['runner', 0.25], ['shield', p > 0.2 ? 0.15 : 0], ['spitter', p > 0.3 ? 0.15 : 0], ['bomber', p > 0.4 ? 0.1 : 0], ['charger', p > 0.5 ? 0.12 : 0], ['brute', p > 0.55 ? 0.08 : 0], ['ghost', p > 0.6 ? 0.1 : 0]],
 };
 export const VILLAGE_STAGE: StageDef = {
-  name: 'Деревня', desc: '', bg: '#0e1a0c', palette: VILLAGE_PAL, gen: NOGEN, hpMul: 1.65, dmgMul: 1.4, rateMul: 1, bosses: ['leaper'],
+  name: 'Деревня', desc: '', bg: '#0e1a0c', palette: VILLAGE_PAL, gen: NOGEN, hpMul: 1.25, dmgMul: 1.15, rateMul: 1, bosses: ['leaper'],
   weights: (p) => [['walker', 0.7], ['dog', 0.5], ['boar', p > 0.15 ? 0.18 : 0], ['runner', 0.2], ['jumper', p > 0.45 ? 0.1 : 0], ['brute', p > 0.5 ? 0.06 : 0]],
 };
 
@@ -424,7 +424,7 @@ export interface Chapter {
 export const CHAPTERS: Chapter[] = [
   { name: 'Здание', goal: 'Прорвись к выходу', ready: true, stage: BUILDING_STAGE, gen: (s) => genBuilding(s), objectives: OBJECTIVES, sight: 0 },
   {
-    name: 'Город', goal: 'Пересеки город до эвакуации', ready: true, stage: CITY_STAGE, gen: (s) => genCity(s, false), sight: 12,
+    name: 'Город', goal: 'Пересеки город до эвакуации', ready: true, stage: CITY_STAGE, gen: (s) => genCity(s, false), sight: 9,
     objectives: [
       { kind: 'reach', icon: '🚧', label: 'Пробейся к перекрёстку', dur: 0 },
       { kind: 'hold', icon: '📻', label: 'Поймай сигнал на радиовышке', dur: 30 },
@@ -432,7 +432,7 @@ export const CHAPTERS: Chapter[] = [
     ],
   },
   {
-    name: 'Мародёрство', goal: 'Обыщи дома и найди карту', ready: true, stage: LOOT_STAGE, gen: (s) => genCity(s, true), sight: 12,
+    name: 'Мародёрство', goal: 'Обыщи дома и найди карту', ready: true, stage: LOOT_STAGE, gen: (s) => genCity(s, true), sight: 9,
     objectives: [
       { kind: 'reach', icon: '💊', label: 'Обыщи аптеку', dur: 0 },
       { kind: 'reach', icon: '🛒', label: 'Обыщи магазин', dur: 0 },
@@ -441,7 +441,7 @@ export const CHAPTERS: Chapter[] = [
     ],
   },
   {
-    name: 'Деревня', goal: 'Найди рабочую машину', ready: true, stage: VILLAGE_STAGE, gen: (s) => genVillage(s), sight: 13,
+    name: 'Деревня', goal: 'Найди рабочую машину', ready: true, stage: VILLAGE_STAGE, gen: (s) => genVillage(s), sight: 10,
     objectives: [
       { kind: 'hold', icon: '🚜', label: 'Осмотри трактор', dur: 15 },
       { kind: 'hold', icon: '🛻', label: 'Осмотри грузовик', dur: 20 },
