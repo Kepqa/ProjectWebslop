@@ -23,7 +23,15 @@ export class Hud {
   private joyKnob = $('joy-knob');
   private joyState = '';
 
-  show() { $('hud').classList.remove('hidden'); }
+  show() {
+    $('hud').classList.remove('hidden');
+    for (const id of ['levelup', 'end']) $(id).classList.add('hidden');
+  }
+  hide() {
+    $('hud').classList.add('hidden');
+    for (const id of ['levelup', 'end']) $(id).classList.add('hidden');
+    this.setJoystick(null);
+  }
 
   setBoss(name: string | null, frac = 0) {
     if (!name) { this.bossEl.classList.add('hidden'); return; }
@@ -48,7 +56,7 @@ export class Hud {
     } else this.joyKnob.style.display = 'none';
   }
 
-  update(s: { hp: number; maxHp: number; energy: number; energyMax: number; xp: number; xpNext: number; time: number; kills: number; level: number }) {
+  update(s: { hp: number; maxHp: number; energy: number; energyMax: number; xp: number; xpNext: number; time: number; total: number; kills: number; level: number }) {
     const key = [Math.ceil(s.hp), s.maxHp, Math.round(s.energy), s.energyMax, Math.floor(s.xp), s.xpNext, Math.floor(s.time), s.kills, s.level].join('|');
     if (key === this.last) return;
     this.last = key;
@@ -57,7 +65,9 @@ export class Hud {
     this.energyFill.style.width = `${(s.energy / s.energyMax) * 100}%`;
     this.xpFill.style.width = `${Math.min(1, s.xp / s.xpNext) * 100}%`;
     const t = Math.floor(s.time);
-    this.timeEl.textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+    const f = (x: number) => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`;
+    this.timeEl.textContent = `${f(t)} / ${f(Math.floor(s.total))}`;
+    this.timeEl.classList.toggle('final', s.total - t <= 90);
     this.killsEl.textContent = String(s.kills);
     this.levelEl.textContent = String(s.level);
   }
@@ -100,9 +110,17 @@ export class Hud {
     wrap.classList.remove('hidden');
   }
 
-  showGameOver(text: string, onRestart: () => void) {
-    $('go-stats').innerHTML = text;
-    $('gameover').classList.remove('hidden');
-    $('restart-btn').onclick = () => { $('gameover').classList.add('hidden'); onRestart(); };
+  showEnd(o: { title: string; text: string; primary: { label: string; fn: () => void }; secondary: { label: string; fn: () => void }; win?: boolean }) {
+    const el = $('end');
+    $('end-title').textContent = o.title;
+    $('end-title').className = o.win ? 'win' : '';
+    $('end-stats').innerHTML = o.text;
+    const b1 = $('end-primary') as HTMLButtonElement, b2 = $('end-secondary') as HTMLButtonElement;
+    b1.textContent = o.primary.label; b2.textContent = o.secondary.label;
+    b1.disabled = b2.disabled = true;
+    setTimeout(() => (b1.disabled = b2.disabled = false), 600);
+    b1.onclick = () => { el.classList.add('hidden'); o.primary.fn(); };
+    b2.onclick = () => { el.classList.add('hidden'); o.secondary.fn(); };
+    el.classList.remove('hidden');
   }
 }

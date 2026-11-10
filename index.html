@@ -21,6 +21,7 @@
       <span id="time">0:00</span>
       <span>💀 <b id="kills">0</b></span>
       <span>Ур. <b id="level">1</b></span>
+      <button id="mute" aria-label="Звук">🔊</button>
     </div>
     <div class="items" id="items"></div>
     <div class="bar xp"><div class="fill" id="xp-fill"></div></div>
@@ -39,19 +40,18 @@
     <h1>Swipe Survivors</h1>
     <ul class="howto">
       <li><b>Движение:</b> джойстик слева (в портрете — внизу слева) или WASD</li>
-      <li><b>Удар:</b> быстрый свайп режет зомби, ящики и кислотные плевки</li>
-      <li><b>Печать:</b> обведи толпу замкнутым кругом — все внутри получат мощный урон</li>
-      <li><b>Рельеф:</b> на возвышенность ведут только пандусы — держи узкие проходы</li>
-      <li>Свайпы тратят энергию. Медленный свайп не режет.</li>
-      <li>Каждые 45 с — орда, каждые 90 с — босс. Из толстяков и боссов падают сундуки.</li>
+      <li><b>Удар:</b> быстрый свайп режет зомби, ящики, могилы и снаряды. Медленный — не режет</li>
+      <li><b>Печать:</b> обведи толпу замкнутым кругом — мощный урон всем внутри</li>
+      <li><b>Рельеф:</b> на возвышенность ведут только пандусы. Прыгуны запрыгивают сами</li>
+      <li>Продержись <b>10 минут</b>, чтобы пройти уровень и открыть следующий</li>
     </ul>
-    <button id="start-btn">Играть</button>
+    <div class="stages" id="stages"></div>
   </div>
 
-  <div id="gameover" class="overlay hidden">
-    <h2>Вас съели</h2>
-    <p id="go-stats"></p>
-    <button id="restart-btn">Ещё раз</button>
+  <div id="end" class="overlay hidden">
+    <h2 id="end-title"></h2>
+    <p id="end-stats"></p>
+    <div class="end-buttons"><button id="end-primary"></button><button id="end-secondary" class="secondary"></button></div>
   </div>
 
   <script type="module" src="./src/main.ts"></script>

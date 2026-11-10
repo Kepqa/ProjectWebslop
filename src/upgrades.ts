@@ -36,6 +36,21 @@ export interface Stats {
   xpMul: number;
   speedMul: number;
   maxHp: number;
+  momentum: number;
+  bleedDps: number;
+  knockMul: number;
+  wallSlam: number;
+  crossDmg: number;
+  crossR: number;
+  boomDmg: number;
+  boomCd: number;
+  bloodEnergy: number;
+  reflectDmg: number;
+  phoenix: number;
+  grenadeCd: number;
+  grenadeDmg: number;
+  grenadeR: number;
+  bell: number;
 }
 
 export const UPGRADES: UpgradeDef[] = [
@@ -64,6 +79,23 @@ export const UPGRADES: UpgradeDef[] = [
     desc: () => 'Задетые свайпом и печатью зомби замедляются сильнее и дольше' },
   { id: 'rune', kind: 'swipe', icon: '🔮', name: 'Мастер печатей', max: 5,
     desc: () => 'Обведи зомби кругом: урон печати +150%' },
+  { id: 'momentum', kind: 'swipe', icon: '💨', name: 'Инерция', max: 4,
+    desc: () => 'Чем резче свайп, тем больнее: до +30% урона за уровень у самых быстрых взмахов' },
+  { id: 'rend', kind: 'swipe', icon: '🩸', name: 'Рваные раны', max: 4,
+    desc: (l) => l === 1 ? 'Задетые зомби кровоточат 3с (урон со временем)' : 'Кровотечение сильнее' },
+  { id: 'shove', kind: 'swipe', icon: '🥊', name: 'Толчок', max: 4,
+    desc: (l) => l === 1 ? 'Свайп отбрасывает сильнее; зомби, врезавшиеся в стену, получают урон. В пропасть — летят насовсем'
+      : 'Сильнее отброс и удар о стену' },
+  { id: 'cross', kind: 'swipe', icon: '✖️', name: 'Крест-накрест', max: 4,
+    desc: (l) => l === 1 ? 'Пересеки свой свежий след другим свайпом — в точке пересечения взрыв'
+      : 'Взрыв пересечения мощнее и шире' },
+  { id: 'boomerang', kind: 'swipe', icon: '🪃', name: 'Бумеранг', max: 4,
+    desc: (l) => l === 1 ? 'Длинный свайп запускает вращающийся клинок, который летит вперёд и возвращается'
+      : 'Бумеранг бьёт сильнее и чаще' },
+  { id: 'bloodblade', kind: 'swipe', icon: '🧛', name: 'Кровопийца', max: 3,
+    desc: () => 'Каждое убийство свайпом возвращает 1.5 энергии' },
+  { id: 'reflect', kind: 'swipe', icon: '🪞', name: 'Зеркальный клинок', max: 3,
+    desc: (l) => l === 1 ? 'Разрубленные плевки и сферы летят обратно во врагов' : 'Отражённые снаряды бьют сильнее' },
 
   // --- Тринкеты ---
   { id: 'censer', kind: 'trinket', icon: '🏮', name: 'Гнилое кадило', max: 5,
@@ -80,6 +112,12 @@ export const UPGRADES: UpgradeDef[] = [
     desc: () => '+12% к скорости бега' },
   { id: 'heart', kind: 'trinket', icon: '❤️', name: 'Запасное сердце', max: 4,
     desc: () => '+25 к макс. HP и столько же лечения' },
+  { id: 'phoenix', kind: 'trinket', icon: '🪶', name: 'Перо феникса', max: 1,
+    desc: () => 'Один раз за забег воскрешает с 50% HP и взрывом' },
+  { id: 'grenade', kind: 'trinket', icon: '💣', name: 'Ржавая граната', max: 4,
+    desc: (l) => l === 1 ? 'Раз в 5с бросает гранату в ближайшую толпу' : 'Гранаты чаще и мощнее' },
+  { id: 'bell', kind: 'trinket', icon: '🔔', name: 'Колокол паники', max: 3,
+    desc: () => 'Когда HP ниже 35% и вас бьют — звон отбрасывает и ранит всех рядом (раз в 25с)' },
 ];
 
 export function computeStats(l: Levels): Stats {
@@ -111,5 +149,20 @@ export function computeStats(l: Levels): Stats {
     xpMul: 1 + 0.25 * v('coin'),
     speedMul: 1 + 0.12 * v('boots'),
     maxHp: 100 + 25 * v('heart'),
+    momentum: 0.3 * v('momentum'),
+    bleedDps: 1.5 * v('rend'),
+    knockMul: 1 + 0.6 * v('shove'),
+    wallSlam: 4 * v('shove'),
+    crossDmg: v('cross') ? 6 + 5 * v('cross') : 0,
+    crossR: 70 + 12 * v('cross'),
+    boomDmg: v('boomerang') ? 3 + 2 * v('boomerang') : 0,
+    boomCd: 1.3 - 0.2 * v('boomerang'),
+    bloodEnergy: 1.5 * v('bloodblade'),
+    reflectDmg: v('reflect') ? 6 + 5 * v('reflect') : 0,
+    phoenix: v('phoenix'),
+    grenadeCd: v('grenade') ? 5.5 - 0.8 * v('grenade') : 0,
+    grenadeDmg: 8 + 5 * v('grenade'),
+    grenadeR: 80 + 12 * v('grenade'),
+    bell: v('bell'),
   };
 }

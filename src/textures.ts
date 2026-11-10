@@ -3,7 +3,8 @@ import Phaser from 'phaser';
 /** Текстуры рисуются в S раз крупнее и уменьшаются при отрисовке — чётко на retina. */
 export const S = 2;
 
-export type ZType = 'walker' | 'runner' | 'spitter' | 'charger' | 'brute' | 'colossus' | 'brood';
+export type ZType = 'walker' | 'runner' | 'spitter' | 'charger' | 'brute' | 'jumper' | 'bomber' | 'shield' | 'ghost'
+  | 'colossus' | 'brood' | 'leaper' | 'necro';
 
 export interface ZLook { r: number; color: number; dark: number; eye: number }
 
@@ -15,6 +16,12 @@ export const ZLOOK: Record<ZType, ZLook> = {
   brute: { r: 26, color: 0x4f7a5a, dark: 0x22392a, eye: 0xffd43b },
   colossus: { r: 48, color: 0x6d7f4a, dark: 0x2f3a1d, eye: 0xff6b6b },
   brood: { r: 44, color: 0x8e5a7a, dark: 0x40213a, eye: 0xffec99 },
+  jumper: { r: 13, color: 0x9775fa, dark: 0x4c2d91, eye: 0xffe066 },
+  bomber: { r: 15, color: 0xe8590c, dark: 0x7c2d12, eye: 0xfff3bf },
+  shield: { r: 16, color: 0x868e96, dark: 0x343a40, eye: 0xff6b6b },
+  ghost: { r: 13, color: 0xd0ebff, dark: 0x748ffc, eye: 0x1c7ed6 },
+  leaper: { r: 40, color: 0x7048e8, dark: 0x30187a, eye: 0xffd43b },
+  necro: { r: 30, color: 0x5f3dc4, dark: 0x1e0f4a, eye: 0x63e6be },
 };
 
 /** Точка вращения зомби (центр тела) в долях текстуры. */
@@ -46,6 +53,31 @@ export function makeTextures(scene: Phaser.Scene) {
   gen('player', 46, 44);
 
   for (const t of Object.keys(ZLOOK) as ZType[]) drawZombie(g, t, gen);
+  drawZombie(g, 'shield', gen, true);
+
+  // Могила
+  g.fillStyle(0x000000, 0.35).fillEllipse(25 * s, 44 * s, 40 * s, 10 * s);
+  g.fillStyle(0x4a4458).fillRect(9 * s, 34 * s, 32 * s, 10 * s);
+  g.fillStyle(0x7c7591).fillRoundedRect(13 * s, 6 * s, 24 * s, 32 * s, { tl: 12 * s, tr: 12 * s, bl: 0, br: 0 });
+  g.fillStyle(0x5c556e).fillRect(23 * s, 13 * s, 4 * s, 16 * s).fillRect(18 * s, 17 * s, 14 * s, 4 * s);
+  g.fillStyle(0x63e6be, 0.5).fillCircle(25 * s, 40 * s, 3 * s);
+  gen('grave', 50, 50);
+
+  g.fillStyle(0x9775fa, 0.35).fillCircle(9 * s, 9 * s, 9 * s);
+  g.fillStyle(0xd0bfff).fillCircle(9 * s, 9 * s, 5.5 * s);
+  g.fillStyle(0xffffff, 0.9).fillCircle(7 * s, 7 * s, 2 * s);
+  gen('orb', 18, 18);
+
+  g.fillStyle(0xe7f5ff);
+  g.fillTriangle(14 * s, 0, 18 * s, 14 * s, 10 * s, 14 * s).fillTriangle(28 * s, 14 * s, 14 * s, 18 * s, 14 * s, 10 * s);
+  g.fillTriangle(14 * s, 28 * s, 10 * s, 14 * s, 18 * s, 14 * s).fillTriangle(0, 14 * s, 14 * s, 10 * s, 14 * s, 18 * s);
+  g.fillStyle(0x66d9e8).fillCircle(14 * s, 14 * s, 4 * s);
+  gen('boomerang', 28, 28);
+
+  g.fillStyle(0x495057).fillCircle(8 * s, 9 * s, 7 * s);
+  g.fillStyle(0x868e96).fillCircle(6 * s, 7 * s, 2.5 * s);
+  g.fillStyle(0xffa94d).fillRect(7 * s, 0, 2 * s, 3 * s);
+  gen('grenade', 16, 17);
 
   const gem = [{ x: 6 * s, y: 0 }, { x: 12 * s, y: 8 * s }, { x: 6 * s, y: 16 * s }, { x: 0, y: 8 * s }];
   g.fillStyle(0x66d9e8).fillPoints(gem, true);
@@ -85,7 +117,7 @@ export function makeTextures(scene: Phaser.Scene) {
   g.destroy();
 }
 
-function drawZombie(g: Phaser.GameObjects.Graphics, t: ZType, gen: (k: string, w: number, h: number) => void) {
+function drawZombie(g: Phaser.GameObjects.Graphics, t: ZType, gen: (k: string, w: number, h: number) => void, broken = false) {
   const s = S;
   const { r, color, dark, eye } = ZLOOK[t];
   const W = Math.ceil(r * 3.3), H = Math.ceil(r * 2.6);
@@ -93,7 +125,16 @@ function drawZombie(g: Phaser.GameObjects.Graphics, t: ZType, gen: (k: string, w
 
   g.fillStyle(0x000000, 0.28).fillCircle(cx + 2 * s, cy + 3 * s, R * 1.08);
   // Руки, тянущиеся вперёд
-  const armLen = t === 'charger' ? 1.2 : t === 'spitter' ? 0.9 : 1.9;
+  const armLen = t === 'charger' ? 1.2 : t === 'spitter' || t === 'bomber' ? 0.9 : t === 'necro' ? 1.4 : 1.9;
+  if (t === 'jumper' || t === 'leaper') {
+    // сложенные лапы для прыжка
+    g.fillStyle(dark);
+    g.fillEllipse(cx - R * 0.55, cy - R * 0.95, R * 1.1, R * 0.45).fillEllipse(cx - R * 0.55, cy + R * 0.95, R * 1.1, R * 0.45);
+  }
+  if (t === 'ghost') {
+    g.fillStyle(color, 0.5);
+    for (let i = 0; i < 3; i++) g.fillTriangle(cx - R * 0.6, cy - R * 0.7 + i * R * 0.7, cx - R * 1.6, cy - R * 0.35 + i * R * 0.7, cx - R * 0.6, cy + i * R * 0.7 - R * 0.1);
+  }
   g.fillStyle(dark);
   g.fillRect(cx, cy - R * 0.82, R * armLen, R * 0.3);
   g.fillRect(cx, cy + R * 0.52, R * armLen * 0.92, R * 0.3);
@@ -117,6 +158,23 @@ function drawZombie(g: Phaser.GameObjects.Graphics, t: ZType, gen: (k: string, w
     for (let i = -2; i <= 2; i++) g.lineBetween(cx - R * 0.5 + i * R * 0.12, cy - R * 0.55, cx - R * 0.4 + i * R * 0.12, cy - R * 0.4);
     g.lineBetween(cx - R * 0.6, cy - R * 0.47, cx - R * 0.05, cy - R * 0.47);
   }
+  if (t === 'bomber') {
+    g.fillStyle(0x212529).fillCircle(cx - R * 0.15, cy, R * 0.55);
+    g.fillStyle(0xffd43b).fillRect(cx - R * 0.2, cy - R * 0.08, R * 0.5, R * 0.16);
+    g.lineStyle(2 * s, 0xffa94d).lineBetween(cx - R * 0.6, cy - R * 0.5, cx - R * 1.05, cy - R * 0.85);
+    g.fillStyle(0xfff3bf).fillCircle(cx - R * 1.05, cy - R * 0.85, R * 0.14);
+  }
+  if (t === 'shield' && !broken) {
+    g.fillStyle(0x000000, 0.3).fillRoundedRect(cx + R * 1.05, cy - R * 1.1, R * 0.5, R * 2.3, 3 * s);
+    g.fillStyle(0xadb5bd).fillRoundedRect(cx + R * 0.95, cy - R * 1.15, R * 0.5, R * 2.3, 3 * s);
+    g.fillStyle(0xdee2e6).fillRect(cx + R * 1.05, cy - R * 1.0, R * 0.12, R * 2.0);
+    g.fillStyle(0x495057).fillCircle(cx + R * 1.2, cy - R * 0.7, R * 0.08).fillCircle(cx + R * 1.2, cy + R * 0.7, R * 0.08);
+  }
+  if (t === 'necro') {
+    g.fillStyle(0x1e0f4a).fillCircle(cx - R * 0.1, cy, R * 0.75);
+    g.fillStyle(0xe9ecef).fillCircle(cx + R * 0.2, cy, R * 0.45);
+    g.fillStyle(0x63e6be, 0.8).fillCircle(cx + R * 1.4, cy - R * 0.67, R * 0.18);
+  }
   if (t === 'brood') {
     g.fillStyle(0xf3d9fa, 0.85);
     for (let i = 0; i < 6; i++) {
@@ -128,7 +186,8 @@ function drawZombie(g: Phaser.GameObjects.Graphics, t: ZType, gen: (k: string, w
   const er = Math.max(2, r * 0.15) * s;
   g.fillCircle(cx + R * 0.48, cy - R * 0.32, er).fillCircle(cx + R * 0.48, cy + R * 0.32, er);
   g.fillStyle(0x000000).fillCircle(cx + R * 0.55, cy - R * 0.32, er * 0.45).fillCircle(cx + R * 0.55, cy + R * 0.32, er * 0.45);
-  gen(t, W, H);
+  gen(broken ? 'shield_broken' : t, W, H);
+  if (broken) return;
 
   // Половинка для разреза
   g.fillStyle(color).slice((r + 2) * s, (r + 2) * s, R, 0, Math.PI, false).fillPath();
