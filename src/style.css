@@ -225,7 +225,7 @@ button:active { transform: translateY(2px); box-shadow: 0 2px 0 #000; }
 }
 
 #objective {
-  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 14px); pointer-events: none;
+  grid-column: 1 / -1; justify-self: center; margin-top: 4px; pointer-events: none;
   background: #000a; border: 2px solid #69db7c; border-radius: 12px; padding: 4px 12px; font-weight: 800; color: #b2f2bb; font-size: 14px; z-index: 5;
 }
 #objective .arrow { display: inline-block; color: #69db7c; font-size: 18px; }
@@ -270,3 +270,27 @@ button:active { transform: translateY(2px); box-shadow: 0 2px 0 #000; }
   .tips { display: none; }
   .list .stage { width: 170px; }
 }
+
+/* крупнее и заметнее полосы HP/энергии */
+.bar.hp { height: 20px; border-width: 2px; }
+.bar.hp span { font-size: 12px; line-height: 16px; }
+.energy { height: 12px; }
+@media (max-height: 500px) and (orientation: landscape) { .bar.hp { height: 15px; } .bar.hp span { font-size: 10px; line-height: 11px; } .energy { height: 8px; } }
+
+#objective { border-color: #ffd43b; color: #fff3bf; }
+#waypoint { position: fixed; transform: translate(-50%, -50%); pointer-events: none; z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+#waypoint .wp-arrow { font-size: 30px; color: #69db7c; text-shadow: 0 0 8px #000, 0 0 2px #000; display: block; animation: wp 0.8s ease-in-out infinite alternate; }
+#waypoint .wp-label { font-size: 13px; font-weight: 900; background: #000b; border: 2px solid #69db7c; border-radius: 10px; padding: 1px 6px; color: #d3f9d8; white-space: nowrap; }
+@keyframes wp { from { opacity: .7; } to { opacity: 1; } }
+
+
+.mode.shop { background: linear-gradient(170deg, #4a3a1f, #2e2414); }
+.shopcard { width: 200px; padding: 12px; border-radius: 14px; background: #2b2a24; border: 3px solid #000; box-shadow: 0 5px 0 #000; display: flex; flex-direction: column; gap: 5px; text-align: left; }
+.shopcard .top { display: flex; gap: 8px; align-items: center; font-weight: 900; }
+.shopcard .top i { font-style: normal; font-size: 26px; }
+.shopcard .d { font-size: 13px; opacity: .85; min-height: 34px; }
+.shopcard .pips { display: flex; gap: 3px; }
+.shopcard .pips i { width: 14px; height: 6px; border-radius: 3px; background: #ffffff22; }
+.shopcard .pips i.on { background: #ffd43b; }
+.shopcard button { font-size: 14px; padding: 6px 10px; }
+@media (max-width: 600px) and (orientation: portrait) { .shopcard { width: 100%; } }

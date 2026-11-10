@@ -75,15 +75,29 @@ export class Hud {
     clearInterval(this.voteTimer);
   }
 
-  /** Цель сюжета и компас к выходу (угол в радианах, null — ещё не найден). */
-  setObjective(goal: string | null, angle: number | null = null, dist: number | null = null) {
+  /** Текст текущей цели (сюжет). */
+  setObjective(text: string | null) {
     const el = $('objective');
-    if (!goal) { el.classList.add('hidden'); return; }
+    if (!text) { el.classList.add('hidden'); return; }
     el.classList.remove('hidden');
-    const st = `${goal}|${angle === null ? '' : angle.toFixed(1)}|${dist}`;
-    if (el.dataset.st === st) return;
-    el.dataset.st = st;
-    el.innerHTML = angle === null ? `🎯 ${goal}` : `<span class="arrow" style="transform:rotate(${angle}rad)">➜</span> Выход · ${dist} м`;
+    if (el.textContent !== text) el.textContent = text;
+  }
+
+  /** Стрелка к цели у края экрана (x,y — экранные CSS-координаты цели). Если цель на экране — скрыта. */
+  setWaypoint(w: { x: number; y: number; icon: string; dist: number } | null) {
+    const el = $('waypoint');
+    const W = window.innerWidth, H = window.innerHeight, m = 46;
+    if (!w || (w.x > m && w.x < W - m && w.y > m + 70 && w.y < H - m)) { el.classList.add('hidden'); return; }
+    const cx = W / 2, cy = H / 2, dx = w.x - cx, dy = w.y - cy;
+    const k = Math.min((W / 2 - m) / Math.max(1e-6, Math.abs(dx)), (H / 2 - m - 30) / Math.max(1e-6, Math.abs(dy)));
+    const px = cx + dx * k, py = cy + dy * k + 15, ang = Math.atan2(dy, dx);
+    el.classList.remove('hidden');
+    el.style.left = `${px}px`; el.style.top = `${py}px`;
+    const st = `${w.icon}|${w.dist}|${ang.toFixed(2)}`;
+    if (el.dataset.st !== st) {
+      el.dataset.st = st;
+      el.innerHTML = `<span class="wp-arrow" style="transform:rotate(${ang}rad)">➤</span><span class="wp-label">${w.icon} ${w.dist} м</span>`;
+    }
   }
 
   showPause(onResume: () => void, onExit: () => void, note = '', levels?: Levels) {
@@ -148,7 +162,8 @@ export class Hud {
     this.joyState = st;
     const outer = $('joy-outer');
     if (!mode) { this.joyBase.style.display = 'none'; this.joyKnob.style.display = 'none'; outer.style.display = 'none'; return; }
-    for (const [el, r, cls] of [[this.joyBase, R, mode], [outer, O, mode + (run ? ' run' : '')]] as const) {
+    outer.style.display = 'none';
+    for (const [el, r, cls] of (O > R ? [[this.joyBase, R, mode], [outer, O, mode + (run ? ' run' : '')]] : [[this.joyBase, R, mode]]) as [HTMLElement, number, string][]) {
       el.style.display = 'block'; el.className = cls;
       Object.assign(el.style, { left: `${bx - r}px`, top: `${by - r}px`, width: `${r * 2}px`, height: `${r * 2}px` });
     }

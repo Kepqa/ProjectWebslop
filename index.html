@@ -29,11 +29,12 @@
     <div class="items" id="items"></div>
     <div class="bar xp"><div class="fill" id="xp-fill"></div></div>
     <div id="boss" class="hidden"><div id="boss-name"></div><div class="bar"><div class="fill" id="boss-fill"></div></div></div>
+    <div id="objective" class="hidden"></div>
   </div>
 
   <div id="joy-outer"></div><div id="joy-base"></div><div id="joy-knob"></div>
   <div id="dev-panel" class="hidden"><div id="dev-stats"></div><div id="dev-buttons"></div></div>
-  <div id="objective" class="hidden"></div>
+  <div id="waypoint" class="hidden"></div>
   <div id="toast"></div>
   <div id="wait" class="hidden"></div>
   <div id="countdown" class="hidden"></div>
@@ -61,12 +62,18 @@
   <div id="start" class="overlay menu">
     <h1 id="title">Swipe<br>Survivors</h1>
     <div id="dev-info" class="hidden"></div>
-    <div class="tips"><span>👆 свайп — удар</span><span>🕹 джойстик · дальше — бег</span><span>⬆ уровень → предмет</span></div>
+    <div class="tips"><span>👆 свайп — удар</span><span>🕹 джойстик слева</span><span>⬆ уровень → предмет</span></div>
 
     <div id="menu-main" class="modes">
       <button class="mode" data-go="story"><i>📖</i><b>Сюжет</b><small>Выберись из здания</small></button>
       <button class="mode" data-go="survival"><i>⚔️</i><b>Выживание</b><small>10 волн · боссы</small></button>
       <button class="mode" data-go="coop"><i>👥</i><b>Кооп</b><small>По сети, по коду</small></button>
+      <button class="mode shop" data-go="shop"><i>🦴</i><b>Мастерская</b><small id="bones-small">0 костей</small></button>
+    </div>
+
+    <div id="menu-shop" class="panel hidden">
+      <div class="panel-title"><button class="back">←</button>Мастерская · <span id="bones">🦴 0</span></div>
+      <div class="list" id="shop"></div>
     </div>
 
     <div id="menu-story" class="panel hidden">

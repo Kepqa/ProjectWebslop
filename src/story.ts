@@ -5,7 +5,7 @@ import type { StageDef } from './stages';
 /** Сюжет: главы. Сейчас готова первая; остальные — следующие итерации. */
 export interface Chapter { name: string; goal: string; ready: boolean }
 export const CHAPTERS: Chapter[] = [
-  { name: 'Здание', goal: 'Выберись из здания', ready: true },
+  { name: 'Здание', goal: 'Прорвись к выходу', ready: true },
   { name: 'Город', goal: 'Пересеки город', ready: false },
   { name: 'Мародёрство', goal: 'Найди карту', ready: false },
   { name: 'Деревня', goal: 'Найди транспорт', ready: false },
@@ -30,7 +30,18 @@ export const BUILDING_STAGE: StageDef = {
 export interface Pt { x: number; y: number }
 export interface StoryMap extends GridMap {
   start: Pt; exit: Pt; entries: Pt[]; groups: { x: number; y: number; n: number; p: number }[]; bossAt: Pt;
+  /** Цепочка целей: ключ-карта → генератор (удержание) → выход (удержание со Стражем). */
+  objectives: Pt[];
+  /** Комнаты с добычей (сундуки) в стороне от пути. */
+  loot: Pt[];
 }
+
+export interface ObjectiveDef { kind: 'reach' | 'hold'; icon: string; label: string; dur: number }
+export const OBJECTIVES: ObjectiveDef[] = [
+  { kind: 'reach', icon: '🔑', label: 'Найди ключ-карту', dur: 0 },
+  { kind: 'hold', icon: '⚡', label: 'Запусти генератор — стой в круге', dur: 30 },
+  { kind: 'hold', icon: '🚪', label: 'Открой выход — держись!', dur: 40 },
+];
 
 function rng(seed: number) {
   let a = seed >>> 0;
@@ -144,6 +155,29 @@ export function genBuilding(seed: number, W = 100, H = 100): StoryMap {
   kind[I(exit.x, exit.y)] = K_EXIT;
   const maxD = Math.max(1, far);
 
+  // --- цели по пути: ~40% и ~70% дистанции до выхода ---
+  const pickRoomAt = (frac: number) => {
+    let best = startRoom, bd = 1e9;
+    rooms.forEach((rc, i) => {
+      if (i === startRoom || i === exitRoom) return;
+      const c = center(rc), d = dist[I(c.x, c.y)];
+      if (d < 0) return;
+      const diff = Math.abs(d / maxD - frac);
+      if (diff < bd) { bd = diff; best = i; }
+    });
+    return best;
+  };
+  const objRooms = [pickRoomAt(0.4), pickRoomAt(0.7), exitRoom];
+  const objectives = objRooms.map((i) => center(rooms[i]));
+  for (const o of objectives) {
+    // площадка цели без мебели
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const x = o.x + dx, y = o.y + dy;
+      if (x > 0 && y > 0 && x < W - 1 && y < H - 1 && kind[I(x, y)] === K_CRATE) kind[I(x, y)] = K_FLOOR;
+    }
+  }
+  const loot: Pt[] = [];
+
   // --- мебель, лазы, спящие группы ---
   const entries: Pt[] = [];
   const groups: StoryMap['groups'] = [];
@@ -169,10 +203,14 @@ export function genBuilding(seed: number, W = 100, H = 100): StoryMap {
       const x = rc.x + ri(0, rc.w - 1), y = r() < 0.5 ? rc.y : rc.y + rc.h - 1;
       if (kind[I(x, y)] === K_FLOOR) { kind[I(x, y)] = K_ENTRY; entries.push({ x, y }); }
     }
-    if (i !== exitRoom && r() < 0.8) groups.push({ x: c.x, y: c.y, n: 2 + Math.round(p * 5) + ri(0, 2), p });
+    // засады (спящие группы) — реже, чем раньше: основное давление — орда
+    if (i !== exitRoom && !objRooms.includes(i) && r() < 0.35) groups.push({ x: c.x, y: c.y, n: 2 + Math.round(p * 4) + ri(0, 2), p });
+    // сундук в части комнат
+    if (!objRooms.includes(i) && r() < 0.3) loot.push({ x: c.x + ri(-1, 1), y: c.y + ri(-1, 1) });
   });
+  for (const lp of loot) if (kind[I(lp.x, lp.y)] !== K_FLOOR) kind[I(lp.x, lp.y)] = K_FLOOR;
 
-  return { W, H, kind, start, exit, entries, groups, bossAt: exit };
+  return { W, H, kind, start, exit, entries, groups, bossAt: exit, objectives, loot };
 }
 
 export function storyWeights(p: number): [ZType, number][] { return BUILDING_STAGE.weights(p); }

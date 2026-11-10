@@ -7,11 +7,12 @@ import { ChunkView } from './chunks';
 import { Effects, EMITTERS, drawTele, drawTrail, trailLife, type TrailSeg, type Tele } from './effects';
 import { STAGES, STAGE_TIME, loadProgress, saveProgress, type StageDef } from './stages';
 import { UPGRADES, computeStats, type Levels, type Stats } from './upgrades';
+import { addBones, loadMeta, metaBonus } from './meta';
 import { S, ZTYPES, makeTextures, zOrigin } from './textures';
 import { World, K_FLOOR, K_TOXIC, K_DOOR, K_DOOROPEN, TILE, key2, type Body } from './world';
 import { Controls } from './controls';
-import { BUILDING_STAGE, CHAPTERS, genBuilding, type StoryMap } from './story';
-import { BOMB_R, PLAYER_R, PLAYER_SPEED, RUN_MUL, SLAM_R, SWIPE_COST, SWIPE_MIN_SPEED, drawAura, drawBurn, drawCharge, drawRevive, drawVortex, styleDowned } from './GameScene';
+import { BUILDING_STAGE, CHAPTERS, OBJECTIVES, genBuilding, type StoryMap } from './story';
+import { BOMB_R, PLAYER_R, PLAYER_SPEED, RUN_MUL, SLAM_R, SWIPE_COST, SWIPE_MIN_SPEED, drawAura, drawBeacon, drawBurn, drawCharge, drawRevive, drawVitals, drawVortex, styleDowned } from './GameScene';
 
 interface ZView { img: Phaser.GameObjects.Image; type: number; fx: number; fy: number; tx: number; ty: number; fr: number; tr: number; t0: number; seen: number }
 interface PState { x: number; y: number; lvl: number; rot: number; hp: number; mhp: number; en: number; emx: number; alive: boolean; down: number; inv: number; hurt: boolean; tox: boolean; aura: number; bones: number; ba: number; sc: number }
@@ -39,6 +40,7 @@ export class ClientScene extends Phaser.Scene {
   private ps: PState[] = [];
   private levels: Levels = {};
   private stats: Stats = computeStats({});
+  private mb = metaBonus({});
   private energyPred = 100;
   private zv = new Map<number, ZView>();
   private gemImgs: Phaser.GameObjects.Image[] = [];
@@ -70,7 +72,7 @@ export class ClientScene extends Phaser.Scene {
 
   private map: StoryMap | null = null;
   private chapter = 0;
-  private wave = 0; private exitSeen = false;
+  private wave = 0; private exitSeen = false; private objIdx = 0; private objProg = 0;
   private controls!: Controls;
 
   init(data: { stage: number; seed: number; time?: number; mode?: 'survival' | 'story'; chapter?: number }) {
@@ -96,7 +98,8 @@ export class ClientScene extends Phaser.Scene {
     this.me = { x: 40, y: 0, lvl: 0, rot: 0, moving: 0, bob: 0 };
     if (this.map) { this.me.x = (this.map.start.x + 0.5) * TILE + 30; this.me.y = (this.map.start.y + 0.5) * TILE; }
     this.wave = 0; this.exitSeen = false;
-    this.levels = {}; this.stats = computeStats(this.levels); this.energyPred = this.stats.energyMax;
+    this.levels = {}; this.mb = metaBonus(loadMeta().lv); this.stats = computeStats(this.levels, this.mb); this.energyPred = this.stats.energyMax;
+    this.net.send({ t: 'meta', lv: loadMeta().lv });
     this.zv.clear(); this.gemImgs = []; this.projImgs = []; this.boomImgs = []; this.boneImgs = [[], []];
     this.segs = []; this.burns = []; this.tele = []; this.projs = []; this.ps = [];
     this.lastSeq = 0; this.paused = false; this.over = false; this.endStrokes(); this.controls?.reset();
@@ -140,7 +143,7 @@ export class ClientScene extends Phaser.Scene {
 
   private applyZoom() {
     const w = window.innerWidth, h = window.innerHeight;
-    this.worldZoom = Phaser.Math.Clamp(Math.min(w, h) / 760, 0.55, 1.15);
+    this.worldZoom = Phaser.Math.Clamp(Math.min(w, h) / 640, 0.65, 1.35);
     this.cameras.main.setZoom(this.worldZoom * this.dpr);
   }
 
@@ -194,7 +197,9 @@ export class ClientScene extends Phaser.Scene {
     this.hud.closeModals(); this.hud.showWait(null); this.hud.setBoss(null); this.hud.setJoystick(null);
     const prog = loadProgress();
     prog.best[this.stageIdx] = Math.max(prog.best[this.stageIdx] ?? 0, Math.floor(this.hdr.t));
-    if (m.win) {
+    if (m.bones) addBones(m.bones);
+    if (m.story !== undefined) prog.story = Math.max(prog.story ?? 0, m.story + 1);
+    if (m.win && m.story === undefined) {
       prog.cleared[this.stageIdx] = true;
       if (this.stageIdx + 1 < STAGES.length) prog.unlocked = Math.max(prog.unlocked, this.stageIdx + 1);
     }
@@ -214,7 +219,7 @@ export class ClientScene extends Phaser.Scene {
     const now = performance.now();
     this.hdr = { t: h.t, T: h.T, k: h.k, xp: h.xp, xn: h.xn, lv: h.lv, boss: h.boss };
     this.wave = h.wv ?? 0;
-    if (h.ex && !this.exitSeen) this.exitSeen = true;
+    if (h.ob) { this.objIdx = h.ob[0]; this.objProg = h.ob[1]; }
     this.tele = h.tele; this.cross = !!h.cross;
     this.ps = (h.pl as number[][]).map((a) => ({
       x: a[0], y: a[1], lvl: a[2], rot: a[3], hp: a[4], mhp: a[5], en: a[6], emx: a[7], alive: !!a[8], down: a[9], inv: a[10], hurt: !!a[11], tox: !!a[12],
@@ -222,7 +227,7 @@ export class ClientScene extends Phaser.Scene {
     }));
     if (this.ps[1]) this.energyPred = this.ps[1].en;
     const lv = h.lv2 as Levels;
-    if (JSON.stringify(lv) !== JSON.stringify(this.levels)) { this.levels = { ...lv }; this.stats = computeStats(this.levels); this.hud.setItems(this.levels); }
+    if (JSON.stringify(lv) !== JSON.stringify(this.levels)) { this.levels = { ...lv }; this.stats = computeStats(this.levels, this.mb); this.hud.setItems(this.levels); }
     const mate = this.ps[0];
     if (mate) { this.mate.fx = this.mateImg.x; this.mate.fy = this.mateImg.y; this.mate.tx = mate.x; this.mate.ty = mate.y; this.mate.t0 = now; }
 
@@ -477,6 +482,7 @@ export class ClientScene extends Phaser.Scene {
       const x = i === 1 ? this.me.x : this.mateImg.x, y = i === 1 ? this.me.y : this.mateImg.y;
       if (p.aura > 0 && p.alive) drawAura(tg, x, y, p.aura, now);
       if (!p.alive) drawRevive(tg, x, y, p.down, now);
+      else drawVitals(tg, x, y, p.hp / p.mhp, i === 1 ? this.energyPred / p.emx : p.en / p.emx);
       // кости-тринкеты
       const imgs = this.boneImgs[i];
       while (imgs.length < p.bones) imgs.push(this.add.image(0, 0, 'bone').setDepth(6).setScale(1 / S));
@@ -504,11 +510,14 @@ export class ClientScene extends Phaser.Scene {
     this.hud.setBoss(this.hdr.boss?.[0] ?? null, this.hdr.boss?.[1] ?? 0);
 
     this.controls.render(this.hud, !this.paused && !this.over && this.alive);
-    if (this.map) {
-      const ex = (this.map.exit.x + 0.5) * TILE, ey = (this.map.exit.y + 0.5) * TILE;
-      if (!this.exitSeen && Math.hypot(ex - this.me.x, ey - this.me.y) < TILE * 16) this.exitSeen = true;
-      this.hud.setObjective(CHAPTERS[this.chapter].goal, this.exitSeen ? Math.atan2(ey - this.me.y, ex - this.me.x) : null, Math.round(Math.hypot(ex - this.me.x, ey - this.me.y) / TILE));
-    }
+    if (this.map && this.objIdx < OBJECTIVES.length) {
+      const o = OBJECTIVES[this.objIdx], t = this.map.objectives[this.objIdx];
+      const wx = (t.x + 0.5) * TILE, wy = (t.y + 0.5) * TILE;
+      drawBeacon(fg, wx, wy, o.kind === 'hold' ? TILE * 2.6 : TILE * 1.5, this.objProg, o.kind === 'hold', now);
+      this.hud.setObjective(`${o.icon} ${this.objIdx + 1}/${OBJECTIVES.length}: ${o.label}${o.kind === 'hold' ? ` · ${Math.floor(this.objProg * 100)}%` : ''}`);
+      const cam = this.cameras.main, k = cam.zoom / this.dpr;
+      this.hud.setWaypoint({ x: (wx - cam.worldView.x) * k, y: (wy - cam.worldView.y) * k, icon: o.icon, dist: Math.round(Math.hypot(wx - this.me.x, wy - this.me.y) / TILE) });
+    } else { this.hud.setObjective(null); this.hud.setWaypoint(null); }
 
     const my = this.myState;
     this.hud.update({

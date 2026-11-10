@@ -9,6 +9,7 @@ import { STAGES, loadProgress } from './stages';
 import { fetchStats, isDev, trackRun, trackVisit } from './stats';
 import { CHAPTERS } from './story';
 import { gyro } from './controls';
+import { META, buyMeta, loadMeta } from './meta';
 
 // Рендерим в физическом разрешении экрана (до 2x), чтобы на retina было чётко
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -56,8 +57,37 @@ function renderStages() {
   if (ready) cards('coop-choices', (p) => startCoopHost(p), { story: true, survival: true });
 }
 
-function showPanel(id: 'main' | 'story' | 'survival' | 'coop') {
-  for (const k of ['main', 'story', 'survival', 'coop']) $(`menu-${k}`).classList.toggle('hidden', k !== id);
+function showPanel(id: 'main' | 'story' | 'survival' | 'coop' | 'shop') {
+  for (const k of ['main', 'story', 'survival', 'coop', 'shop']) $(`menu-${k}`).classList.toggle('hidden', k !== id);
+  if (id === 'shop') renderShop();
+  renderBones();
+}
+
+function renderBones() {
+  const b = loadMeta().bones;
+  $('bones').textContent = `🦴 ${b}`;
+  $('bones-small').textContent = `${b} костей`;
+}
+
+/** Мастерская: постоянные улучшения за кости. */
+function renderShop() {
+  const m = loadMeta();
+  const wrap = $('shop');
+  wrap.innerHTML = '';
+  for (const d of META) {
+    const l = m.lv[d.id] ?? 0, maxed = l >= d.max, cost = d.cost[l];
+    const c = document.createElement('div');
+    c.className = 'shopcard';
+    c.innerHTML = `<div class="top"><i>${d.icon}</i>${d.name}</div>
+      <div class="pips">${Array.from({ length: d.max }, (_, k) => `<i class="${k < l ? 'on' : ''}"></i>`).join('')}</div>
+      <div class="d">${maxed ? d.desc(l) : `Сейчас: ${l ? d.desc(l) : '—'}<br>Дальше: ${d.desc(l + 1)}`}</div>`;
+    const b = document.createElement('button');
+    b.textContent = maxed ? 'Максимум' : `Купить · ${cost} 🦴`;
+    b.disabled = maxed || m.bones < cost;
+    b.onclick = () => { if (buyMeta(d.id)) { sfx.unlock(); sfx.play('chest'); renderShop(); renderBones(); } };
+    c.appendChild(b);
+    wrap.appendChild(c);
+  }
 }
 
 function setLobby(state: Lobby, html = '') {
@@ -120,6 +150,7 @@ function showMenu(leaveRoom: boolean) {
   document.body.style.background = '';
   renderStages();
   showPanel(lobby === 'idle' ? 'main' : 'coop');
+  renderBones();
   $('start').classList.remove('hidden');
 }
 
@@ -230,10 +261,11 @@ $('set-sound').addEventListener('click', toggleMute);
 // Гироскоп
 const syncGyro = () => { $('set-gyro').textContent = `📱 Гироскоп: ${gyro.enabled ? 'вкл' : 'выкл'}`; $('set-gyro').classList.toggle('on', gyro.enabled); };
 if (!gyro.supported || !('ontouchstart' in window)) $('set-gyro').classList.add('hidden');
+else if (gyro.enabled) gyro.listen();
 syncGyro();
 $('set-gyro').addEventListener('click', async () => {
   if (gyro.enabled) gyro.disable();
-  else if (!(await gyro.enable())) alert('Нет доступа к гироскопу');
+  else if (!(await gyro.enable())) alert('Датчик наклона недоступен: браузер не отдаёт данные гироскопа/акселерометра. Проверьте разрешение «Датчики движения» в настройках сайта.');
   syncGyro();
 });
 
@@ -275,6 +307,7 @@ $('title').addEventListener('click', () => {
 
 trackVisit();
 renderDevInfo();
+renderBones();
 setLobby('idle');
 // Блокируем жесты Safari (зум щипком, двойной тап)
 document.addEventListener('gesturestart', (e) => e.preventDefault());

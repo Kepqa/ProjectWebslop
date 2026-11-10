@@ -29,7 +29,7 @@ export const SYNERGIES: SynergyDef[] = [
   { id: 'thirst', icon: '🍷', name: 'Жажда', a: 'bloodblade', b: 'rend', desc: 'Убийства кровотечением лечат 1 HP' },
   { id: 'doublerune', icon: '♾️', name: 'Двойная печать', a: 'rune', b: 'echo', desc: 'Печать повторяется через 0.5с' },
   { id: 'blackhole', icon: '🕳️', name: 'Чёрная дыра', a: 'censer', b: 'magnet', desc: 'Аура кадила затягивает зомби к вам' },
-  { id: 'kaleido', icon: '🔷', name: 'Калейдоскоп', a: 'mirror', b: 'cross', desc: 'Зеркальный след тоже взрывается на пересечениях, взрывы +50%' },
+  { id: 'kaleido', icon: '🔷', name: 'Калейдоскоп', a: 'mirror', b: 'cross', desc: 'Взрывы креста +50% шире и сильнее' },
   { id: 'echocross', icon: '♻️', name: 'Эхо-перекрёсток', a: 'echo', b: 'cross', desc: 'Эхо-разрез взрывается на пересечениях со следами' },
   { id: 'echofire', icon: '🔥', name: 'Пламя эха', a: 'echo', b: 'burn', desc: 'Эхо-разрез тоже оставляет огненный след' },
   { id: 'mirrormines', icon: '🎇', name: 'Зеркальные мины', a: 'mirror', b: 'mines', desc: 'Двойник тоже роняет мины' },
@@ -89,14 +89,14 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'boomerang', kind: K.s, icon: '🪃', name: 'Бумеранг', max: 4,
     desc: (l) => l === 1 ? 'Длинный свайп запускает вращающийся клинок туда и обратно' : 'Бумеранг бьёт сильнее и чаще' },
   { id: 'bloodblade', kind: K.s, icon: '🧛', name: 'Кровопийца', max: 3, desc: () => 'Каждое убийство свайпом возвращает 1.5 энергии' },
-  { id: 'reflect', kind: K.s, icon: '🪞', name: 'Зеркальный клинок', max: 3,
+  { id: 'reflect', kind: K.s, icon: '🪞', name: 'Отражатель', max: 3,
     desc: (l) => l === 1 ? 'Разрубленные плевки и сферы летят обратно во врагов' : 'Отражённые снаряды бьют сильнее' },
 
   // --- Формы свайпа ---
   { id: 'spear', kind: K.f, icon: '🔱', name: 'Копьё', max: 4,
     desc: (l) => l === 1 ? 'В конце свайпа по его направлению летит копьё, пронзающее всех на пути' : l === 3 ? 'Два копья веером, больше урона' : 'Копьё бьёт сильнее' },
   { id: 'wave', kind: K.f, icon: '🌊', name: 'Волна', max: 4,
-    desc: (l) => l === 1 ? 'Нарисованный след расходится волной своей же формы' : 'Волна шире и сильнее' },
+    desc: (l) => l === 1 ? 'Нарисованный след расходится волной своей же формы (раз в 1.4с)' : 'Волна шире и сильнее' },
   { id: 'mirror', kind: K.f, icon: '🦋', name: 'Двойник', max: 4,
     desc: (l) => l === 1 ? 'Свайп отражается зеркально через героя (55% урона)' : '+15% урона отражения' },
   { id: 'shards', kind: K.f, icon: '✴️', name: 'Веер осколков', max: 4,
@@ -160,7 +160,18 @@ export function rollChoices(l: Levels, n = 3): UpgradeDef[] {
   return out;
 }
 
-export function computeStats(l: Levels): Stats {
+import type { MetaBonus } from './meta';
+
+export function computeStats(l: Levels, mb?: MetaBonus): Stats {
+  const s = baseStats(l);
+  if (!mb) return s;
+  // постоянные бонусы из «Мастерской»
+  s.maxHp += mb.hp; s.bladeDamage += mb.dmg; s.energyMax += mb.energy; s.energyRegen += mb.regen;
+  s.xpMul *= 1 + mb.xp; s.pickupRadius *= 1 + mb.magnet; s.speedMul *= 1 + mb.speed; s.phoenix = Math.max(s.phoenix, mb.revive);
+  return s;
+}
+
+function baseStats(l: Levels): Stats {
   const v = (id: string) => l[id] ?? 0;
   const syn: Record<string, boolean> = {};
   for (const s of activeSynergies(l)) syn[s.id] = true;
@@ -209,8 +220,8 @@ export function computeStats(l: Levels): Stats {
     bell: v('bell'),
     spearDmg: v('spear') ? 5 + 4 * v('spear') : 0,
     spearCount: v('spear') >= 3 ? 2 : 1,
-    waveDmg: v('wave') ? 2 + 2 * v('wave') : 0,
-    waveScale: 2 + 0.4 * v('wave'),
+    waveDmg: v('wave') ? 1 + 1.5 * v('wave') : 0,
+    waveScale: 1.7 + 0.25 * v('wave'),
     mirrorMul: v('mirror') ? 0.4 + 0.15 * v('mirror') : 0,
     shardCount: v('shards') ? 2 + v('shards') : 0,
     shardDmg: 3 + 2 * v('shards'),
