@@ -2446,9 +2446,10 @@ export function drawRevive(g: Phaser.GameObjects.Graphics, x: number, y: number,
 }
 
 export function drawBurn(g: Phaser.GameObjects.Graphics, x1: number, y1: number, x2: number, y2: number, w: number, fade: number) {
-  const a = Math.min(1, fade) * (0.55 + Math.random() * 0.25);
-  g.lineStyle(w * 0.8, 0xff6b00, a * 0.5).lineBetween(x1, y1, x2, y2);
-  g.lineStyle(w * 0.3, 0xffd43b, a).lineBetween(x1, y1, x2, y2);
+  // приглушённый и полупрозрачный, чтобы не закрывать зомби
+  const a = Math.min(1, fade) * (0.5 + Math.random() * 0.15);
+  g.lineStyle(w * 0.55, 0xe8590c, a * 0.18).lineBetween(x1, y1, x2, y2);
+  g.lineStyle(w * 0.18, 0xffa94d, a * 0.4).lineBetween(x1, y1, x2, y2);
 }
 
 export function fmt(t: number) { t = Math.floor(t); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; }

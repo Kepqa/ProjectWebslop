@@ -13,6 +13,7 @@ import { gyro } from './controls';
 import { META, buyMeta, loadMeta } from './meta';
 import { ACHIEVEMENTS, LOCKED_BY, isUnlocked, loadAch, unlockedSet } from './achievements';
 import { SYNERGIES, UPGRADES, byId } from './upgrades';
+import { BUILD, BUILD_DATE, VERSION, checkUpdate } from './version';
 
 // Рендерим в физическом разрешении экрана (до 2x), чтобы на retina было чётко
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -343,6 +344,20 @@ $('title').addEventListener('click', () => {
   }
   renderDevInfo(); renderStages();
 });
+
+// Версия и проверка обновлений (страница могла остаться в кэше)
+$('version').textContent = `v${VERSION} · ${BUILD.split('+')[1]} · ${BUILD_DATE}`;
+$('pause-version').textContent = `v${VERSION} (${BUILD.split('+')[1]})`;
+const pollUpdate = async () => {
+  const v = await checkUpdate();
+  if (!v) return;
+  const el = $('update');
+  el.textContent = `🔄 Вышла версия ${v} — нажмите, чтобы обновить`;
+  el.classList.remove('hidden');
+  el.onclick = () => location.reload();
+};
+void pollUpdate();
+setInterval(() => { if (!$('start').classList.contains('hidden')) void pollUpdate(); }, 120000);
 
 trackVisit();
 renderDevInfo();

@@ -329,3 +329,6 @@ button:active { transform: translateY(2px); box-shadow: 0 2px 0 #000; }
 .panel { max-height: calc(100vh - 220px); overflow-y: auto; touch-action: pan-y; }
 @media (max-width: 600px) and (orientation: portrait) { .ach { width: 100%; } .cx-grid { grid-template-columns: 1fr; } }
 @media (max-height: 500px) and (orientation: landscape) { .panel { max-height: calc(100vh - 120px); } .sub { padding: 5px 10px; font-size: 12px; } }
+
+#version, .vtag { font-size: 11px; opacity: .45; font-variant-numeric: tabular-nums; }
+#update { font-size: 14px; font-weight: 800; color: #111; background: #ffd43b; border-radius: 12px; padding: 8px 14px; cursor: pointer; border: 2px solid #000; }
