@@ -1,16 +1,8 @@
 import type { ZType } from './textures';
-import { K_CRATE, K_DOOR, K_ENTRY, K_EXIT, K_FLOOR, K_WALL, type GridMap } from './world';
+import { K_CRATE, K_DOOR, K_ENTRY, K_EXIT, K_FLOOR, K_PIT, K_WALL, type GridMap } from './world';
 import type { StageDef } from './stages';
 
 /** Сюжет: главы. Сейчас готова первая; остальные — следующие итерации. */
-export interface Chapter { name: string; goal: string; ready: boolean }
-export const CHAPTERS: Chapter[] = [
-  { name: 'Здание', goal: 'Прорвись к выходу', ready: true },
-  { name: 'Город', goal: 'Пересеки город', ready: false },
-  { name: 'Мародёрство', goal: 'Найди карту', ready: false },
-  { name: 'Деревня', goal: 'Найди транспорт', ready: false },
-];
-
 /** Внешний вид и враги главы 1 (в формате уровня выживания — для общих систем). */
 export const BUILDING_STAGE: StageDef = {
   name: 'Здание',
@@ -213,4 +205,247 @@ export function genBuilding(seed: number, W = 100, H = 100): StoryMap {
   return { W, H, kind, start, exit, entries, groups, bossAt: exit, objectives, loot };
 }
 
-export function storyWeights(p: number): [ZType, number][] { return BUILDING_STAGE.weights(p); }
+
+// ======================= Общие помощники генераторов =======================
+/** BFS-дистанции от точки по проходимым клеткам. */
+function bfs(kind: Uint8Array, W: number, H: number, sx: number, sy: number) {
+  const dist = new Int32Array(W * H).fill(-1);
+  const pass = (k: number) => k !== K_WALL && k !== K_CRATE && k !== K_PIT;
+  const q = [sy * W + sx]; dist[q[0]] = 0;
+  for (let h = 0; h < q.length; h++) {
+    const c = q[h], cx = c % W, cy = (c / W) | 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = cx + dx, ny = cy + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const n = ny * W + nx;
+      if (dist[n] >= 0 || !pass(kind[n])) continue;
+      dist[n] = dist[c] + 1; q.push(n);
+    }
+  }
+  return dist;
+}
+
+/** Точка (клетка) с относительной дистанцией ближе всего к frac среди кандидатов. */
+function pickAt(cands: Pt[], dist: Int32Array, W: number, maxD: number, frac: number, avoid: Pt[] = []) {
+  let best = cands[0], bd = 1e9;
+  for (const c of cands) {
+    const d = dist[c.y * W + c.x];
+    if (d < 0 || avoid.some((a) => Math.abs(a.x - c.x) + Math.abs(a.y - c.y) < 12)) continue;
+    const diff = Math.abs(d / maxD - frac);
+    if (diff < bd) { bd = diff; best = c; }
+  }
+  return best;
+}
+
+function clearAround(kind: Uint8Array, W: number, H: number, p: Pt, r: number) {
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    const x = p.x + dx, y = p.y + dy;
+    if (x > 0 && y > 0 && x < W - 1 && y < H - 1 && kind[y * W + x] !== K_DOOR) kind[y * W + x] = K_FLOOR;
+  }
+}
+
+/**
+ * Город: кварталы со зданиями, улицы с машинами и баррикадами, спящие группы на перекрёстках.
+ * enterable — у части зданий есть внутренние помещения с дверями (глава 3).
+ */
+export function genCity(seed: number, enterable: boolean, W = 110, H = 110): StoryMap {
+  const r = rng(seed);
+  const ri = (a: number, b: number) => a + Math.floor(r() * (b - a + 1));
+  const kind = new Uint8Array(W * H).fill(K_FLOOR);
+  const I = (x: number, y: number) => y * W + x;
+  for (let x = 0; x < W; x++) { kind[I(x, 0)] = K_WALL; kind[I(x, H - 1)] = K_WALL; }
+  for (let y = 0; y < H; y++) { kind[I(0, y)] = K_WALL; kind[I(W - 1, y)] = K_WALL; }
+  const street = 4;
+  const xs: number[] = [], ys: number[] = [];
+  for (let x = 3; x < W - 8; x += ri(10, 15) + street) xs.push(x);
+  for (let y = 3; y < H - 8; y += ri(10, 15) + street) ys.push(y);
+  const buildings: { x: number; y: number; w: number; h: number; door: Pt | null }[] = [];
+  const parks: Pt[] = [];
+  for (let i = 0; i < xs.length; i++) for (let j = 0; j < ys.length; j++) {
+    const bx = xs[i] + street, by = ys[j] + street;
+    const bw = Math.min((xs[i + 1] ?? W - 2) - bx, W - 2 - bx), bh = Math.min((ys[j + 1] ?? H - 2) - by, H - 2 - by);
+    if (bw < 6 || bh < 6) continue;
+    const kindRoll = r();
+    if (kindRoll < 0.15) { // сквер с деревьями
+      for (let n = ri(4, 9); n > 0; n--) { const x = bx + ri(1, bw - 2), y = by + ri(1, bh - 2); kind[I(x, y)] = K_WALL; }
+      parks.push({ x: bx + (bw >> 1), y: by + (bh >> 1) });
+      continue;
+    }
+    if (kindRoll < 0.27) { // парковка с машинами
+      for (let n = ri(2, 5); n > 0; n--) { const x = bx + ri(1, bw - 3), y = by + ri(1, bh - 2); kind[I(x, y)] = K_CRATE; kind[I(x + 1, y)] = K_CRATE; }
+      continue;
+    }
+    // здание: отступ-тротуар 1 клетка
+    const x0 = bx + 1, y0 = by + 1, w = bw - 2, h = bh - 2;
+    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) kind[I(x, y)] = K_WALL;
+    let door: Pt | null = null;
+    if (enterable && w >= 6 && h >= 6 && r() < 0.6) {
+      for (let y = y0 + 1; y < y0 + h - 1; y++) for (let x = x0 + 1; x < x0 + w - 1; x++) kind[I(x, y)] = K_FLOOR;
+      // перегородка с проходом
+      if (w >= 9) { const px = x0 + (w >> 1), gap = ri(y0 + 1, y0 + h - 3); for (let y = y0 + 1; y < y0 + h - 1; y++) if (y !== gap && y !== gap + 1) kind[I(px, y)] = K_WALL; }
+      // двери на фасадах
+      const side = ri(0, 3);
+      door = side === 0 ? { x: x0 + ri(1, w - 2), y: y0 } : side === 1 ? { x: x0 + ri(1, w - 2), y: y0 + h - 1 } : side === 2 ? { x: x0, y: y0 + ri(1, h - 2) } : { x: x0 + w - 1, y: y0 + ri(1, h - 2) };
+      kind[I(door.x, door.y)] = K_DOOR;
+      const d2 = side < 2 ? { x: x0 + ri(1, w - 2), y: side === 0 ? y0 + h - 1 : y0 } : { x: side === 2 ? x0 + w - 1 : x0, y: y0 + ri(1, h - 2) };
+      if (r() < 0.5) kind[I(d2.x, d2.y)] = K_DOOR;
+      for (let n = ri(1, 3); n > 0; n--) { const x = x0 + ri(1, w - 2), y = y0 + ri(1, h - 2); if (kind[I(x, y)] === K_FLOOR) kind[I(x, y)] = K_CRATE; }
+    }
+    buildings.push({ x: x0, y: y0, w, h, door });
+  }
+  // машины и баррикады на улицах
+  const streetCells: Pt[] = [];
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) if (kind[I(x, y)] === K_FLOOR) streetCells.push({ x, y });
+  for (let n = 0; n < 60; n++) {
+    const c = streetCells[ri(0, streetCells.length - 1)];
+    if (r() < 0.75) { if (kind[I(c.x + 1, c.y)] === K_FLOOR) { kind[I(c.x, c.y)] = K_CRATE; kind[I(c.x + 1, c.y)] = K_CRATE; } }
+    else { const horiz = r() < 0.5; for (let k = 0; k < ri(2, 4); k++) { const x = c.x + (horiz ? k : 0), y = c.y + (horiz ? 0 : k); if (x < W - 1 && y < H - 1 && kind[I(x, y)] === K_FLOOR) kind[I(x, y)] = K_WALL; } }
+  }
+  const start = { x: 3, y: H - 4 };
+  clearAround(kind, W, H, start, 3);
+  const dist = bfs(kind, W, H, start.x, start.y);
+  let maxD = 1;
+  for (const d of dist) if (d > maxD) maxD = d;
+  const open = streetCells.filter((c) => kind[I(c.x, c.y)] === K_FLOOR && dist[I(c.x, c.y)] > 0);
+  let objectives: Pt[];
+  if (enterable) {
+    // 3 обыска внутри зданий с дверями + удержание двора в конце
+    const inside = buildings.filter((b) => b.door).map((b) => ({ x: b.x + (b.w >> 1) - (b.w >= 9 ? 2 : 0), y: b.y + (b.h >> 1) }));
+    const reach = inside.filter((p) => dist[I(p.x, p.y)] > 0);
+    const o1 = pickAt(reach, dist, W, maxD, 0.25), o2 = pickAt(reach, dist, W, maxD, 0.5, [o1]), o3 = pickAt(reach, dist, W, maxD, 0.75, [o1, o2]);
+    const o4 = pickAt(open, dist, W, maxD, 1);
+    objectives = [o1, o2, o3, o4];
+  } else {
+    objectives = [pickAt(open, dist, W, maxD, 0.4), pickAt(open, dist, W, maxD, 0.7), pickAt(open, dist, W, maxD, 1)];
+  }
+  for (const o of objectives) clearAround(kind, W, H, o, 2);
+  const groups: StoryMap['groups'] = [];
+  for (let n = 0; n < 26; n++) {
+    const c = open[ri(0, open.length - 1)];
+    const d = dist[I(c.x, c.y)];
+    if (d < 12) continue;
+    const p = Math.min(1, d / maxD);
+    groups.push({ x: c.x, y: c.y, n: 3 + Math.round(p * 4) + ri(0, 2), p });
+  }
+  const loot: Pt[] = [];
+  for (const b of buildings) if (b.door && !objectives.some((o) => o.x >= b.x && o.x < b.x + b.w && o.y >= b.y && o.y < b.y + b.h) && r() < 0.5) loot.push({ x: b.x + 1 + ri(0, Math.max(0, b.w - 3)), y: b.y + 1 + ri(0, Math.max(0, b.h - 3)) });
+  for (const p of parks) if (r() < 0.4) loot.push(p);
+  for (const l of loot) kind[I(l.x, l.y)] = K_FLOOR;
+  const exit = objectives[objectives.length - 1];
+  return { W, H, kind, start, exit, entries: [], groups, bossAt: exit, objectives, loot };
+}
+
+/** Деревня: поле, рощи, пруды, фермы за заборами (сарай, дом), стаи собак. */
+export function genVillage(seed: number, W = 120, H = 120): StoryMap {
+  const r = rng(seed);
+  const ri = (a: number, b: number) => a + Math.floor(r() * (b - a + 1));
+  const kind = new Uint8Array(W * H).fill(K_FLOOR);
+  const I = (x: number, y: number) => y * W + x;
+  const inb = (x: number, y: number) => x > 0 && y > 0 && x < W - 1 && y < H - 1;
+  for (let x = 0; x < W; x++) { kind[I(x, 0)] = K_WALL; kind[I(x, H - 1)] = K_WALL; }
+  for (let y = 0; y < H; y++) { kind[I(0, y)] = K_WALL; kind[I(W - 1, y)] = K_WALL; }
+  // рощи
+  for (let n = 0; n < 22; n++) {
+    const cx = ri(5, W - 6), cy = ri(5, H - 6), rad = 1.5 + r() * 3;
+    for (let y = cy - 5; y <= cy + 5; y++) for (let x = cx - 5; x <= cx + 5; x++) if (inb(x, y) && (x - cx) ** 2 + (y - cy) ** 2 <= rad * rad && r() < 0.55) kind[I(x, y)] = K_WALL;
+  }
+  // пруды (пропасти — туда можно скинуть зомби)
+  for (let n = 0; n < 6; n++) {
+    const cx = ri(10, W - 11), cy = ri(10, H - 11), rad = 1.8 + r() * 2.2;
+    for (let y = cy - 5; y <= cy + 5; y++) for (let x = cx - 5; x <= cx + 5; x++) if (inb(x, y) && (x - cx) ** 2 + (y - cy) ** 2 <= rad * rad) kind[I(x, y)] = K_PIT;
+  }
+  // фермы
+  const farms: Pt[] = [];
+  for (let tries = 0; farms.length < 6 && tries < 80; tries++) {
+    const w = ri(12, 16), h = ri(10, 14), x0 = ri(4, W - w - 4), y0 = ri(4, H - h - 4);
+    if (farms.some((f) => Math.abs(f.x - (x0 + w / 2)) < 20 && Math.abs(f.y - (y0 + h / 2)) < 18)) continue;
+    for (let y = y0 - 1; y <= y0 + h; y++) for (let x = x0 - 1; x <= x0 + w; x++) if (inb(x, y)) kind[I(x, y)] = K_FLOOR;
+    // забор с воротами
+    for (let x = x0; x < x0 + w; x++) { kind[I(x, y0)] = K_WALL; kind[I(x, y0 + h - 1)] = K_WALL; }
+    for (let y = y0; y < y0 + h; y++) { kind[I(x0, y)] = K_WALL; kind[I(x0 + w - 1, y)] = K_WALL; }
+    const gate = (gx: number, gy: number, horiz: boolean) => { for (let k = 0; k < 3; k++) kind[I(gx + (horiz ? k : 0), gy + (horiz ? 0 : k))] = K_FLOOR; };
+    gate(x0 + ri(2, w - 5), y0, true); gate(x0 + ri(2, w - 5), y0 + h - 1, true);
+    if (r() < 0.6) gate(x0, y0 + ri(2, h - 5), false);
+    // дом (глухой) и сарай с дверью
+    const hx = x0 + 2, hy = y0 + 2;
+    for (let y = hy; y < hy + 3; y++) for (let x = hx; x < hx + 4; x++) kind[I(x, y)] = K_WALL;
+    const bx = x0 + w - 7, by = y0 + h - 6;
+    for (let y = by; y < by + 4; y++) for (let x = bx; x < bx + 5; x++) kind[I(x, y)] = (y === by || y === by + 3 || x === bx || x === bx + 4) ? K_WALL : K_FLOOR;
+    kind[I(bx + 2, by)] = K_DOOR;
+    // сено (ящики)
+    for (let n = ri(1, 3); n > 0; n--) { const x = x0 + ri(2, w - 3), y = y0 + ri(5, h - 3); if (kind[I(x, y)] === K_FLOOR) kind[I(x, y)] = K_CRATE; }
+    farms.push({ x: x0 + (w >> 1), y: y0 + (h >> 1) + 1 });
+  }
+  const start = { x: 4, y: 4 };
+  clearAround(kind, W, H, start, 3);
+  for (const f of farms) clearAround(kind, W, H, f, 2);
+  const dist = bfs(kind, W, H, start.x, start.y);
+  const reachable = farms.filter((f) => dist[I(f.x, f.y)] > 0).sort((a, b) => dist[I(a.x, a.y)] - dist[I(b.x, b.y)]);
+  // три фермы с машинами: ближняя, средняя, дальняя
+  const objectives = reachable.length >= 3 ? [reachable[Math.floor(reachable.length * 0.3)], reachable[Math.floor(reachable.length * 0.65)], reachable[reachable.length - 1]] : [farms[0], farms[1] ?? farms[0], farms[2] ?? farms[0]];
+  let maxD = 1;
+  for (const d of dist) if (d > maxD) maxD = d;
+  const open: Pt[] = [];
+  for (let y = 2; y < H - 2; y += 2) for (let x = 2; x < W - 2; x += 2) if (dist[I(x, y)] > 12) open.push({ x, y });
+  const groups: StoryMap['groups'] = [];
+  for (let n = 0; n < 24 && open.length; n++) {
+    const c = open[ri(0, open.length - 1)], p = Math.min(1, dist[I(c.x, c.y)] / maxD);
+    groups.push({ x: c.x, y: c.y, n: 3 + Math.round(p * 3) + ri(0, 2), p });
+  }
+  const loot = farms.filter((f) => !objectives.includes(f)).map((f) => ({ x: f.x, y: f.y }));
+  const exit = objectives[2];
+  return { W, H, kind, start, exit, entries: [], groups, bossAt: exit, objectives, loot };
+}
+
+// ======================= Главы =======================
+const CITY_PAL = { floor: [0x2c2e31, 0x3a3d41, 0x45484c], ramp: [0x34373b, 0x404347], wallTop: 0x7a5546, wallFace: 0x4a3229, wallLine: 0x5e4035, deco: 0x3a3a3a, pit: 0x050505, toxic: 0x4d7c0f };
+const VILLAGE_PAL = { floor: [0x2e4423, 0x3a5a2e, 0x4a6b38], ramp: [0x3b5a2e, 0x4a6b38], wallTop: 0x4e6b2e, wallFace: 0x2c3d18, wallLine: 0x3d5422, deco: 0x5a7a3a, pit: 0x13314a, toxic: 0x4d7c0f };
+const NOGEN = { plateau: 0, walls: [0, 0] as [number, number], crates: [0, 0] as [number, number], pits: false, maze: false, toxic: false, graves: [0, 0] as [number, number] };
+
+export const CITY_STAGE: StageDef = {
+  name: 'Город', desc: '', bg: '#101113', palette: CITY_PAL, gen: NOGEN, hpMul: 1.25, dmgMul: 1.15, rateMul: 1, bosses: ['brood'],
+  weights: (p) => [['walker', 1], ['runner', p > 0.1 ? 0.3 : 0], ['spitter', p > 0.3 ? 0.15 : 0], ['bomber', p > 0.4 ? 0.1 : 0], ['charger', p > 0.45 ? 0.12 : 0], ['brute', p > 0.5 ? 0.07 : 0], ['jumper', p > 0.6 ? 0.1 : 0]],
+};
+export const LOOT_STAGE: StageDef = {
+  ...CITY_STAGE, name: 'Мародёрство', palette: { ...CITY_PAL, wallTop: 0x6b5a4f, wallFace: 0x3d332c }, hpMul: 1.45, dmgMul: 1.3, bosses: ['necro'],
+  weights: (p) => [['walker', 1], ['runner', 0.25], ['shield', p > 0.2 ? 0.15 : 0], ['spitter', p > 0.3 ? 0.15 : 0], ['bomber', p > 0.4 ? 0.1 : 0], ['charger', p > 0.5 ? 0.12 : 0], ['brute', p > 0.55 ? 0.08 : 0], ['ghost', p > 0.6 ? 0.1 : 0]],
+};
+export const VILLAGE_STAGE: StageDef = {
+  name: 'Деревня', desc: '', bg: '#0e1a0c', palette: VILLAGE_PAL, gen: NOGEN, hpMul: 1.65, dmgMul: 1.4, rateMul: 1, bosses: ['leaper'],
+  weights: (p) => [['walker', 0.7], ['dog', 0.5], ['boar', p > 0.15 ? 0.18 : 0], ['runner', 0.2], ['jumper', p > 0.45 ? 0.1 : 0], ['brute', p > 0.5 ? 0.06 : 0]],
+};
+
+export interface Chapter {
+  name: string; goal: string; ready: boolean; stage: StageDef; gen: (seed: number) => StoryMap; objectives: ObjectiveDef[];
+  /** На каком расстоянии (клетки) спящие замечают героя даже без шума. */
+  sight: number;
+}
+
+export const CHAPTERS: Chapter[] = [
+  { name: 'Здание', goal: 'Прорвись к выходу', ready: true, stage: BUILDING_STAGE, gen: (s) => genBuilding(s), objectives: OBJECTIVES, sight: 0 },
+  {
+    name: 'Город', goal: 'Пересеки город до эвакуации', ready: true, stage: CITY_STAGE, gen: (s) => genCity(s, false), sight: 12,
+    objectives: [
+      { kind: 'reach', icon: '🚧', label: 'Пробейся к перекрёстку', dur: 0 },
+      { kind: 'hold', icon: '📻', label: 'Поймай сигнал на радиовышке', dur: 30 },
+      { kind: 'hold', icon: '🚁', label: 'Продержись до эвакуации', dur: 45 },
+    ],
+  },
+  {
+    name: 'Мародёрство', goal: 'Обыщи дома и найди карту', ready: true, stage: LOOT_STAGE, gen: (s) => genCity(s, true), sight: 12,
+    objectives: [
+      { kind: 'reach', icon: '💊', label: 'Обыщи аптеку', dur: 0 },
+      { kind: 'reach', icon: '🛒', label: 'Обыщи магазин', dur: 0 },
+      { kind: 'reach', icon: '🗺️', label: 'Найди карту в офисе', dur: 0 },
+      { kind: 'hold', icon: '🏃', label: 'Уходи — держи двор', dur: 35 },
+    ],
+  },
+  {
+    name: 'Деревня', goal: 'Найди рабочую машину', ready: true, stage: VILLAGE_STAGE, gen: (s) => genVillage(s), sight: 13,
+    objectives: [
+      { kind: 'hold', icon: '🚜', label: 'Осмотри трактор', dur: 15 },
+      { kind: 'hold', icon: '🛻', label: 'Осмотри грузовик', dur: 20 },
+      { kind: 'hold', icon: '🚙', label: 'Почини пикап — держись!', dur: 40 },
+    ],
+  },
+];

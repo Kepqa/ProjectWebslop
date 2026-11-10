@@ -57,6 +57,7 @@ export interface Stats {
   mineDmg: number; mineR: number; mineEvery: number;
   vortexR: number; vortexDps: number; vortexDur: number;
   chargeMul: number;
+  comboTime: number; frenzyDmg: number; finisher: number;
   syn: Record<string, boolean>;
 }
 
@@ -105,6 +106,8 @@ export const UPGRADES: UpgradeDef[] = [
     desc: (l) => l === 1 ? 'Длинный след роняет звёзды-мины, они взрываются через 0.6с' : 'Мины чаще и мощнее' },
   { id: 'vortex', kind: K.f, icon: '🌀', name: 'Вихрь', max: 4,
     desc: (l) => l === 1 ? 'Резкий разворот свайпа (V или Z) создаёт вихрь, затягивающий зомби' : 'Вихрь шире и злее' },
+  { id: 'frenzy', kind: K.s, icon: '🎰', name: 'Азарт', max: 3,
+    desc: () => 'Бонус урона от комбо сильнее, каждое убийство в серии возвращает энергию' },
   { id: 'charge', kind: K.f, icon: '🎯', name: 'Заряд', max: 4,
     desc: (l) => l === 1 ? 'Задержи палец на месте 0.5с, затем режь: свайп ×2 урона и шире' : '+0.4 к множителю заряда' },
 
@@ -118,6 +121,8 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'heart', kind: K.t, icon: '❤️', name: 'Запасное сердце', max: 4, desc: () => '+25 к макс. HP и столько же лечения' },
   { id: 'phoenix', kind: K.t, icon: '🪶', name: 'Перо феникса', max: 1, desc: () => 'Один раз за забег воскрешает с 50% HP и взрывом' },
   { id: 'grenade', kind: K.t, icon: '💣', name: 'Ржавая граната', max: 4, desc: (l) => l === 1 ? 'Раз в 5с бросает гранату в ближайшую толпу' : 'Гранаты чаще и мощнее' },
+  { id: 'metronome', kind: K.t, icon: '⏱️', name: 'Метроном', max: 3, desc: () => 'Серия комбо держится на 0.6с дольше' },
+  { id: 'finisher', kind: K.t, icon: '🧨', name: 'Финишер', max: 3, desc: () => 'Конец серии от 10 убийств взрывается вокруг вас (урон растёт с серией)' },
   { id: 'bell', kind: K.t, icon: '🔔', name: 'Колокол паники', max: 3, desc: () => 'HP ниже 35% и вас бьют — звон отбрасывает и ранит всех рядом (раз в 25с)' },
 ];
 
@@ -129,11 +134,14 @@ export function slotsUsed(l: Levels) {
   return used;
 }
 
-/** Что можно предложить: не на максимуме и (уже взято или есть свободный слот). */
-export function offerPool(l: Levels, onlyKind?: Kind) {
+import { isUnlocked } from './achievements';
+
+/** Что можно предложить: открыто, не на максимуме и (уже взято или есть свободный слот). */
+export function offerPool(l: Levels, onlyKind?: Kind, unlocked: Set<string> | null = null) {
   const used = slotsUsed(l);
   return UPGRADES.filter((u) => {
     if (onlyKind && u.kind !== onlyKind) return false;
+    if (!isUnlocked(u.id, unlocked)) return false;
     const lv = l[u.id] ?? 0;
     if (lv >= u.max) return false;
     return lv > 0 || used[slotOf(u.kind)] < SLOTS[slotOf(u.kind)];
@@ -141,8 +149,8 @@ export function offerPool(l: Levels, onlyKind?: Kind) {
 }
 
 /** Три карточки: взвешенно, с приоритетом того, что даст синергию. */
-export function rollChoices(l: Levels, n = 3): UpgradeDef[] {
-  const pool = offerPool(l);
+export function rollChoices(l: Levels, unlocked: Set<string> | null = null, n = 3): UpgradeDef[] {
+  const pool = offerPool(l, undefined, unlocked);
   const out: UpgradeDef[] = [];
   while (out.length < n && pool.length) {
     const w = pool.map((u) => {
@@ -232,6 +240,7 @@ function baseStats(l: Levels): Stats {
     vortexDps: 3 * v('vortex'),
     vortexDur: 1.1 + 0.2 * v('vortex') + (syn.tornado ? 1 : 0),
     chargeMul: v('charge') ? 1.6 + 0.4 * v('charge') : 0,
+    comboTime: 0.6 * v('metronome'), frenzyDmg: v('frenzy'), finisher: v('finisher'),
     syn,
   };
 }

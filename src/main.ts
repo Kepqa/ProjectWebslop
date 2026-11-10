@@ -8,8 +8,11 @@ import { sfx } from './sfx';
 import { STAGES, loadProgress } from './stages';
 import { fetchStats, isDev, trackRun, trackVisit } from './stats';
 import { CHAPTERS } from './story';
+import { settings, saveSettings } from './settings';
 import { gyro } from './controls';
 import { META, buyMeta, loadMeta } from './meta';
+import { ACHIEVEMENTS, LOCKED_BY, isUnlocked, loadAch, unlockedSet } from './achievements';
+import { SYNERGIES, UPGRADES, byId } from './upgrades';
 
 // Рендерим в физическом разрешении экрана (до 2x), чтобы на retina было чётко
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -57,16 +60,44 @@ function renderStages() {
   if (ready) cards('coop-choices', (p) => startCoopHost(p), { story: true, survival: true });
 }
 
-function showPanel(id: 'main' | 'story' | 'survival' | 'coop' | 'shop') {
-  for (const k of ['main', 'story', 'survival', 'coop', 'shop']) $(`menu-${k}`).classList.toggle('hidden', k !== id);
+type Panel = 'main' | 'story' | 'survival' | 'coop' | 'shop' | 'codex' | 'ach';
+function showPanel(id: Panel) {
+  for (const k of ['main', 'story', 'survival', 'coop', 'shop', 'codex', 'ach']) $(`menu-${k}`).classList.toggle('hidden', k !== id);
+  $('menu-sub').classList.toggle('hidden', id !== 'main');
+  document.querySelector('.tips')!.classList.toggle('hidden', id !== 'main');
+  document.querySelector('.settings')!.classList.toggle('hidden', id !== 'main');
   if (id === 'shop') renderShop();
+  if (id === 'codex') renderCodex();
+  if (id === 'ach') renderAch();
   renderBones();
+}
+
+/** Справочник предметов: что делает, синергии, как открыть. */
+function renderCodex() {
+  const un = unlockedSet();
+  const groups: [string, string][] = [['swipe', '🗡️ Свойства клинка'], ['shape', '🌀 Формы свайпа'], ['trinket', '🏮 Тринкеты']];
+  $('codex').innerHTML = groups.map(([kind, title]) => `<div class="cx-group"><h3>${title}</h3><div class="cx-grid">${UPGRADES.filter((u) => u.kind === kind).map((u) => {
+    const ok = isUnlocked(u.id, un);
+    const syn = SYNERGIES.filter((x) => x.a === u.id || x.b === u.id).map((x) => `${x.icon} ${x.name} (+ ${byId(x.a === u.id ? x.b : x.a)!.icon})`).join(', ');
+    const lock = ok ? '' : `<span class="lock">🔒 ${LOCKED_BY[u.id].icon} ${LOCKED_BY[u.id].name}: ${LOCKED_BY[u.id].desc}</span>`;
+    return `<div class="cx ${ok ? '' : 'locked'}"><b>${u.icon} ${u.name}</b><span>${u.desc(1)}</span>${syn ? `<span class="syn">🔗 ${syn}</span>` : ''}${lock}</div>`;
+  }).join('')}</div></div>`).join('');
+}
+
+function renderAch() {
+  const st = loadAch();
+  $('achs').innerHTML = ACHIEVEMENTS.map((a) => {
+    const done = st.done.includes(a.id);
+    const ul = a.unlock?.map((id) => `${byId(id)!.icon} ${byId(id)!.name}`).join(', ');
+    return `<div class="ach ${done ? 'done' : ''}"><i>${done ? a.icon : '🔒'}</i><div><b>${a.name}</b>${a.desc}${ul ? `<div class="ul">Открывает: ${ul}</div>` : ''}</div></div>`;
+  }).join('');
 }
 
 function renderBones() {
   const b = loadMeta().bones;
   $('bones').textContent = `🦴 ${b}`;
-  $('bones-small').textContent = `${b} костей`;
+  $('bones-small').textContent = String(b);
+  $('ach-small').textContent = `${loadAch().done.length}/${ACHIEVEMENTS.length}`;
 }
 
 /** Мастерская: постоянные улучшения за кости. */
@@ -259,7 +290,15 @@ muteBtn.addEventListener('click', toggleMute);
 $('set-sound').addEventListener('click', toggleMute);
 
 // Гироскоп
-const syncGyro = () => { $('set-gyro').textContent = `📱 Гироскоп: ${gyro.enabled ? 'вкл' : 'выкл'}`; $('set-gyro').classList.toggle('on', gyro.enabled); };
+const syncGyro = () => { $('set-gyro').textContent = `📱 Наклон: ${gyro.enabled ? 'вкл' : 'выкл'}`; $('set-gyro').classList.toggle('on', gyro.enabled); };
+const syncSet = () => {
+  $('set-gloomy').classList.toggle('on', settings.gloomy);
+  $('set-lefty').classList.toggle('on', settings.lefty);
+  document.body.classList.toggle('lefty', settings.lefty);
+};
+syncSet();
+$('set-gloomy').addEventListener('click', () => { settings.gloomy = !settings.gloomy; saveSettings(); syncSet(); });
+$('set-lefty').addEventListener('click', () => { settings.lefty = !settings.lefty; saveSettings(); syncSet(); });
 if (!gyro.supported || !('ontouchstart' in window)) $('set-gyro').classList.add('hidden');
 else if (gyro.enabled) gyro.listen();
 syncGyro();
@@ -270,7 +309,7 @@ $('set-gyro').addEventListener('click', async () => {
 });
 
 // Навигация меню
-document.querySelectorAll<HTMLButtonElement>('.mode').forEach((b) => b.addEventListener('click', () => { sfx.unlock(); showPanel(b.dataset.go as 'story'); }));
+document.querySelectorAll<HTMLButtonElement>('.mode, .sub').forEach((b) => b.addEventListener('click', () => { sfx.unlock(); showPanel(b.dataset.go as Panel); }));
 document.querySelectorAll<HTMLButtonElement>('.back').forEach((b) => b.addEventListener('click', () => showPanel('main')));
 // iOS считает жестом только click/touchend/keydown (не pointerdown) — будим звук на них
 for (const ev of ['touchend', 'click', 'keydown']) document.addEventListener(ev, () => sfx.unlock(), { passive: true });

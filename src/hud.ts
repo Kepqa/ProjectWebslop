@@ -75,6 +75,23 @@ export class Hud {
     clearInterval(this.voteTimer);
   }
 
+  private scoreKey = '';
+  /** Счёт по центру сверху и текущая серия комбо с таймером. */
+  setScore(score: number, combo: number, mul: number, timer: number, frenzy: boolean) {
+    const key = `${score}|${combo}|${(timer * 20) | 0}|${frenzy}`;
+    if (key === this.scoreKey) return;
+    const prevCombo = Number(this.scoreKey.split('|')[1] || 0);
+    this.scoreKey = key;
+    $('score-num').textContent = score.toLocaleString('ru-RU');
+    const c = $('combo');
+    c.classList.toggle('hidden', combo < 2);
+    c.classList.toggle('frenzy', frenzy);
+    c.classList.toggle('hot', combo >= 25);
+    $('combo-txt').textContent = `${combo} комбо · ×${mul.toFixed(1)}`;
+    ($('combo-fill') as HTMLElement).style.width = `${Math.max(0, Math.min(1, timer)) * 100}%`;
+    if (combo > prevCombo) { c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump'); }
+  }
+
   /** Текст текущей цели (сюжет). */
   setObjective(text: string | null) {
     const el = $('objective');

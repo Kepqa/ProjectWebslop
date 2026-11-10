@@ -8,13 +8,15 @@ import { Effects, EMITTERS, drawTele, drawTrail, trailLife, type TrailSeg, type 
 import { STAGES, STAGE_TIME, loadProgress, saveProgress, type StageDef } from './stages';
 import { UPGRADES, computeStats, type Levels, type Stats } from './upgrades';
 import { addBones, loadMeta, metaBonus } from './meta';
-import { S, ZTYPES, makeTextures, zOrigin } from './textures';
+import { recordLife, unlockedSet } from './achievements';
+import { S, WALK_FRAMES, ZTYPES, makeTextures, zOrigin } from './textures';
 import { World, K_FLOOR, K_TOXIC, K_DOOR, K_DOOROPEN, TILE, key2, type Body } from './world';
 import { Controls } from './controls';
-import { BUILDING_STAGE, CHAPTERS, OBJECTIVES, genBuilding, type StoryMap } from './story';
+import { applyLook } from './look';
+import { CHAPTERS, type StoryMap } from './story';
 import { BOMB_R, PLAYER_R, PLAYER_SPEED, RUN_MUL, SLAM_R, SWIPE_COST, SWIPE_MIN_SPEED, drawAura, drawBeacon, drawBurn, drawCharge, drawRevive, drawVitals, drawVortex, styleDowned } from './GameScene';
 
-interface ZView { img: Phaser.GameObjects.Image; type: number; fx: number; fy: number; tx: number; ty: number; fr: number; tr: number; t0: number; seen: number }
+interface ZView { img: Phaser.GameObjects.Image; type: number; fx: number; fy: number; tx: number; ty: number; fr: number; tr: number; t0: number; seen: number; ph: number; base: string }
 interface PState { x: number; y: number; lvl: number; rot: number; hp: number; mhp: number; en: number; emx: number; alive: boolean; down: number; inv: number; hurt: boolean; tox: boolean; aura: number; bones: number; ba: number; sc: number }
 
 const SNAP_MS = 50;
@@ -37,6 +39,7 @@ export class ClientScene extends Phaser.Scene {
   private meImg!: Phaser.GameObjects.Image;
   private mateImg!: Phaser.GameObjects.Image;
   private mate = { fx: 0, fy: 0, tx: 0, ty: 0, t0: 0 };
+  private mateBob = 0;
   private ps: PState[] = [];
   private levels: Levels = {};
   private stats: Stats = computeStats({});
@@ -71,16 +74,18 @@ export class ClientScene extends Phaser.Scene {
   constructor() { super('client'); }
 
   private map: StoryMap | null = null;
+  private get objs() { return CHAPTERS[this.chapter].objectives; }
   private chapter = 0;
   private wave = 0; private exitSeen = false; private objIdx = 0; private objProg = 0;
+  private sc: number[] = [0, 0, 1, 0, 0];
   private controls!: Controls;
 
   init(data: { stage: number; seed: number; time?: number; mode?: 'survival' | 'story'; chapter?: number }) {
     this.stageIdx = data.stage; this.seed = data.seed;
     this.net = session.net!;
     this.chapter = data.chapter ?? 0;
-    this.map = data.mode === 'story' ? genBuilding(this.seed) : null;
-    this.stage = this.map ? BUILDING_STAGE : STAGES[this.stageIdx];
+    this.map = data.mode === 'story' ? CHAPTERS[this.chapter].gen(this.seed) : null;
+    this.stage = this.map ? CHAPTERS[this.chapter].stage : STAGES[this.stageIdx];
     if (this.map) data.time = Infinity;
     this.hdr.T = data.time ?? STAGE_TIME;
   }
@@ -99,7 +104,8 @@ export class ClientScene extends Phaser.Scene {
     if (this.map) { this.me.x = (this.map.start.x + 0.5) * TILE + 30; this.me.y = (this.map.start.y + 0.5) * TILE; }
     this.wave = 0; this.exitSeen = false;
     this.levels = {}; this.mb = metaBonus(loadMeta().lv); this.stats = computeStats(this.levels, this.mb); this.energyPred = this.stats.energyMax;
-    this.net.send({ t: 'meta', lv: loadMeta().lv });
+    const un = unlockedSet();
+    this.net.send({ t: 'meta', lv: loadMeta().lv, unl: un ? [...un] : null });
     this.zv.clear(); this.gemImgs = []; this.projImgs = []; this.boomImgs = []; this.boneImgs = [[], []];
     this.segs = []; this.burns = []; this.tele = []; this.projs = []; this.ps = [];
     this.lastSeq = 0; this.paused = false; this.over = false; this.endStrokes(); this.controls?.reset();
@@ -119,6 +125,7 @@ export class ClientScene extends Phaser.Scene {
 
     this.cameras.main.startFollow(this.meImg, false, 1, 1);
     this.applyZoom();
+    applyLook(this.cameras.main);
     this.scale.on('resize', this.applyZoom, this);
     session.onMsg = this.onMsg;
     session.onSnap = this.onSnap;
@@ -198,6 +205,12 @@ export class ClientScene extends Phaser.Scene {
     const prog = loadProgress();
     prog.best[this.stageIdx] = Math.max(prog.best[this.stageIdx] ?? 0, Math.floor(this.hdr.t));
     if (m.bones) addBones(m.bones);
+    const L = m.life;
+    if (L) {
+      const max: Record<string, number> = { maxCombo: L.combo, maxScore: L.score, maxWave: L.wave, chapter: L.chapter };
+      if (L.chapter === 1) max.bestCh1 = L.time;
+      for (const a of recordLife({ kills: L.kills, bosses: L.bosses, falls: L.falls, runs: 1, coop: 1 }, max)) this.hud.toast(`🏆 Ачивка «${a.name}»`, 2600);
+    }
     if (m.story !== undefined) prog.story = Math.max(prog.story ?? 0, m.story + 1);
     if (m.win && m.story === undefined) {
       prog.cleared[this.stageIdx] = true;
@@ -220,6 +233,7 @@ export class ClientScene extends Phaser.Scene {
     this.hdr = { t: h.t, T: h.T, k: h.k, xp: h.xp, xn: h.xn, lv: h.lv, boss: h.boss };
     this.wave = h.wv ?? 0;
     if (h.ob) { this.objIdx = h.ob[0]; this.objProg = h.ob[1]; }
+    if (h.sc) this.sc = h.sc;
     this.tele = h.tele; this.cross = !!h.cross;
     this.ps = (h.pl as number[][]).map((a) => ({
       x: a[0], y: a[1], lvl: a[2], rot: a[3], hp: a[4], mhp: a[5], en: a[6], emx: a[7], alive: !!a[8], down: a[9], inv: a[10], hurt: !!a[11], tox: !!a[12],
@@ -238,14 +252,14 @@ export class ClientScene extends Phaser.Scene {
         v?.img.destroy();
         const t = ZTYPES[r.type];
         const img = this.add.image(r.x, r.y, t).setOrigin(zOrigin(t), 0.5).setDepth(4);
-        v = { img, type: r.type, fx: r.x, fy: r.y, tx: r.x, ty: r.y, fr: r.rot, tr: r.rot, t0: now, seen: h.s };
+        v = { img, type: r.type, fx: r.x, fy: r.y, tx: r.x, ty: r.y, fr: r.rot, tr: r.rot, t0: now, seen: h.s, ph: 0, base: t };
         this.zv.set(r.id, v);
       }
       v.fx = v.img.x; v.fy = v.img.y; v.tx = r.x; v.ty = r.y; v.fr = v.img.rotation; v.tr = r.rot; v.t0 = now; v.seen = h.s;
       const img = v.img;
       img.setScale(r.sx / S, r.sy / S).setAlpha(r.alpha);
       img.setDepth(r.flags & ZF.AIR ? 6.5 : r.flags & ZF.BOSS ? 4.5 : 4);
-      if (r.flags & ZF.BROKEN && img.texture.key !== 'shield_broken') img.setTexture('shield_broken');
+      if (r.flags & ZF.BROKEN) v.base = 'shield_broken';
       if (r.flags & ZF.FLASH) img.setTintFill(0xffffff);
       else if (r.flags & ZF.RED) img.setTint(0xff8787);
       else if (r.flags & ZF.FROST) img.setTint(0x9fd4ff);
@@ -431,6 +445,8 @@ export class ClientScene extends Phaser.Scene {
     const my = this.myState;
     this.meImg.setPosition(me.x, me.y).setRotation(me.rot).setScale(((1 + 0.07 * me.lvl) * (1 + Math.sin(me.bob) * 0.05 * me.moving)) / S);
     if (my) styleDowned(this.meImg, my.alive, my.inv, my.hurt, my.tox);
+    const myFr = me.moving > 0.1 ? `player2_w${Math.floor(me.bob / (Math.PI / 2)) % WALK_FRAMES}` : 'player2';
+    if (this.meImg.texture.key !== myFr) this.meImg.setTexture(myFr);
 
     // Напарник
     const mate = this.ps[0];
@@ -439,6 +455,10 @@ export class ClientScene extends Phaser.Scene {
       this.mateImg.setPosition(this.mate.fx + (this.mate.tx - this.mate.fx) * k, this.mate.fy + (this.mate.ty - this.mate.fy) * k)
         .setRotation(mate.rot).setScale(mate.sc / S);
       styleDowned(this.mateImg, mate.alive, mate.inv, mate.hurt, mate.tox);
+      const mv = Math.hypot(this.mate.tx - this.mate.fx, this.mate.ty - this.mate.fy);
+      this.mateBob += mv > 1 ? dt * 14 : 0;
+      const mfr = mv > 1 ? `player_w${Math.floor(this.mateBob / (Math.PI / 2)) % WALK_FRAMES}` : 'player';
+      if (this.mateImg.texture.key !== mfr) this.mateImg.setTexture(mfr);
     }
 
     // Зомби
@@ -446,7 +466,12 @@ export class ClientScene extends Phaser.Scene {
       const k = Phaser.Math.Clamp((now - v.t0) / SNAP_MS, 0, 1);
       let dr = v.tr - v.fr;
       dr = Math.atan2(Math.sin(dr), Math.cos(dr));
-      v.img.setPosition(v.fx + (v.tx - v.fx) * k, v.fy + (v.ty - v.fy) * k).setRotation(v.fr + dr * k);
+      const nx = v.fx + (v.tx - v.fx) * k, ny = v.fy + (v.ty - v.fy) * k;
+      const mv = Math.hypot(nx - v.img.x, ny - v.img.y);
+      v.ph += mv * 0.09;
+      const fr = mv > 0.2 ? `${v.base}_w${Math.floor(v.ph / (Math.PI / 2)) % WALK_FRAMES}` : v.base;
+      if (v.img.texture.key !== fr) v.img.setTexture(fr);
+      v.img.setPosition(nx, ny).setRotation(v.fr + dr * k);
     }
     // Снаряды: экстраполяция по скорости
     const ex = (now - this.projAt) / 1000;
@@ -510,11 +535,11 @@ export class ClientScene extends Phaser.Scene {
     this.hud.setBoss(this.hdr.boss?.[0] ?? null, this.hdr.boss?.[1] ?? 0);
 
     this.controls.render(this.hud, !this.paused && !this.over && this.alive);
-    if (this.map && this.objIdx < OBJECTIVES.length) {
-      const o = OBJECTIVES[this.objIdx], t = this.map.objectives[this.objIdx];
+    if (this.map && this.objIdx < this.objs.length) {
+      const o = this.objs[this.objIdx], t = this.map.objectives[this.objIdx];
       const wx = (t.x + 0.5) * TILE, wy = (t.y + 0.5) * TILE;
       drawBeacon(fg, wx, wy, o.kind === 'hold' ? TILE * 2.6 : TILE * 1.5, this.objProg, o.kind === 'hold', now);
-      this.hud.setObjective(`${o.icon} ${this.objIdx + 1}/${OBJECTIVES.length}: ${o.label}${o.kind === 'hold' ? ` · ${Math.floor(this.objProg * 100)}%` : ''}`);
+      this.hud.setObjective(`${o.icon} ${this.objIdx + 1}/${this.objs.length}: ${o.label}${o.kind === 'hold' ? ` · ${Math.floor(this.objProg * 100)}%` : ''}`);
       const cam = this.cameras.main, k = cam.zoom / this.dpr;
       this.hud.setWaypoint({ x: (wx - cam.worldView.x) * k, y: (wy - cam.worldView.y) * k, icon: o.icon, dist: Math.round(Math.hypot(wx - this.me.x, wy - this.me.y) / TILE) });
     } else { this.hud.setObjective(null); this.hud.setWaypoint(null); }
@@ -524,6 +549,7 @@ export class ClientScene extends Phaser.Scene {
       hp: my?.hp ?? 100, maxHp: my?.mhp ?? 100, energy: Math.min(this.energyPred, my?.emx ?? 100), energyMax: my?.emx ?? 100,
       xp: this.hdr.xp, xpNext: this.hdr.xn, time: this.hdr.t, total: this.hdr.T, kills: this.hdr.k, level: this.hdr.lv, wave: this.wave,
     });
+    this.hud.setScore(this.sc[0], this.sc[1], this.sc[2], this.sc[3], !!this.sc[4]);
   }
 }
 

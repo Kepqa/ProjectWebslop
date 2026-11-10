@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { Hud } from './hud';
+import { settings } from './settings';
 
 /**
  * Управление наклоном. Источники по приоритету:
@@ -114,6 +115,7 @@ export class Controls {
   /** Зона джойстика: нижняя левая часть экрана (компактнее, чем раньше). */
   inZone(x: number, y: number) {
     const w = window.innerWidth, h = window.innerHeight;
+    if (settings.lefty) x = w - x; // левша: джойстик справа
     return w > h ? x < w * 0.32 && y > h * 0.35 : x < w * 0.5 && y > h * 0.62;
   }
   R() { return Phaser.Math.Clamp(Math.min(window.innerWidth, window.innerHeight) * 0.1, 40, 64); }
@@ -163,8 +165,8 @@ export class Controls {
       hud.setJoystick('active', this.joy.bx, this.joy.by, this.joy.bx + jx * m, this.joy.by + jy * m, R, 0);
     } else if (this.touchSeen && active) {
       const w = window.innerWidth, h = window.innerHeight;
-      if (w > h) hud.setJoystick('hint', R + 36, h - R - 36, 0, 0, R, 0);
-      else hud.setJoystick('hint', w * 0.25, h - R - 50, 0, 0, R, 0);
+      const hx = w > h ? R + 36 : w * 0.25, hy = w > h ? h - R - 36 : h - R - 50;
+      hud.setJoystick('hint', settings.lefty ? w - hx : hx, hy, 0, 0, R, 0);
     } else hud.setJoystick(null);
   }
 }
