@@ -8,13 +8,15 @@ import { Effects, EMITTERS, drawTele, drawTrail, trailLife, type TrailSeg, type 
 import { STAGES, STAGE_TIME, loadProgress, saveProgress, type StageDef } from './stages';
 import { UPGRADES, computeStats, type Levels, type Stats } from './upgrades';
 import { S, ZTYPES, makeTextures, zOrigin } from './textures';
-import { World, K_FLOOR, K_TOXIC, key2, type Body } from './world';
-import { BOMB_R, PLAYER_R, PLAYER_SPEED, SLAM_R, SWIPE_COST, SWIPE_MIN_SPEED, drawAura, drawBurn, drawCharge, drawRevive, drawVortex, styleDowned } from './GameScene';
+import { World, K_FLOOR, K_TOXIC, K_DOOR, K_DOOROPEN, TILE, key2, type Body } from './world';
+import { Controls } from './controls';
+import { BUILDING_STAGE, CHAPTERS, genBuilding, type StoryMap } from './story';
+import { BOMB_R, PLAYER_R, PLAYER_SPEED, RUN_MUL, SLAM_R, SWIPE_COST, SWIPE_MIN_SPEED, drawAura, drawBurn, drawCharge, drawRevive, drawVortex, styleDowned } from './GameScene';
 
 interface ZView { img: Phaser.GameObjects.Image; type: number; fx: number; fy: number; tx: number; ty: number; fr: number; tr: number; t0: number; seen: number }
 interface PState { x: number; y: number; lvl: number; rot: number; hp: number; mhp: number; en: number; emx: number; alive: boolean; down: number; inv: number; hurt: boolean; tox: boolean; aura: number; bones: number; ba: number; sc: number }
 
-const SNAP_MS = 66;
+const SNAP_MS = 50;
 
 /** Гость в онлайн-коопе: рисует мир по снимкам хоста, своё движение и свайпы — локально. */
 export class ClientScene extends Phaser.Scene {
@@ -58,7 +60,7 @@ export class ClientScene extends Phaser.Scene {
   private sidSeq = 0;
   private joy: { id: number; bx: number; by: number; x: number; y: number } | null = null;
   private touchSeen = false;
-  private mvAt = 0; private chunkAt = 0;
+  private mvAt = 0; private chunkAt = 0; private doorAt = 0;
   private pauseReqPending = false; private pauseReqAt = -1e9;
   private trailG!: Phaser.GameObjects.Graphics;
   private fxG!: Phaser.GameObjects.Graphics;
@@ -66,10 +68,18 @@ export class ClientScene extends Phaser.Scene {
 
   constructor() { super('client'); }
 
-  init(data: { stage: number; seed: number; time?: number }) {
+  private map: StoryMap | null = null;
+  private chapter = 0;
+  private wave = 0; private exitSeen = false;
+  private controls!: Controls;
+
+  init(data: { stage: number; seed: number; time?: number; mode?: 'survival' | 'story'; chapter?: number }) {
     this.stageIdx = data.stage; this.seed = data.seed;
     this.net = session.net!;
-    this.stage = STAGES[this.stageIdx];
+    this.chapter = data.chapter ?? 0;
+    this.map = data.mode === 'story' ? genBuilding(this.seed) : null;
+    this.stage = this.map ? BUILDING_STAGE : STAGES[this.stageIdx];
+    if (this.map) data.time = Infinity;
     this.hdr.T = data.time ?? STAGE_TIME;
   }
 
@@ -77,17 +87,19 @@ export class ClientScene extends Phaser.Scene {
     if (location.search.includes('debug')) Object.assign(window, { scene: this, sfx });
     makeTextures(this);
     this.dpr = (this.registry.get('dpr') as number) || 1;
-    this.world = new World(this.seed, this.stage.gen);
+    this.world = new World(this.seed, this.stage.gen, this.map);
     this.chunks = new ChunkView(this, this.world, this.stage.palette);
     this.vfx = new Effects(this);
     this.cameras.main.setBackgroundColor(this.stage.bg);
     document.body.style.background = this.stage.bg;
 
     this.me = { x: 40, y: 0, lvl: 0, rot: 0, moving: 0, bob: 0 };
+    if (this.map) { this.me.x = (this.map.start.x + 0.5) * TILE + 30; this.me.y = (this.map.start.y + 0.5) * TILE; }
+    this.wave = 0; this.exitSeen = false;
     this.levels = {}; this.stats = computeStats(this.levels); this.energyPred = this.stats.energyMax;
     this.zv.clear(); this.gemImgs = []; this.projImgs = []; this.boomImgs = []; this.boneImgs = [[], []];
     this.segs = []; this.burns = []; this.tele = []; this.projs = []; this.ps = [];
-    this.lastSeq = 0; this.paused = false; this.over = false; this.endStrokes(); this.joy = null;
+    this.lastSeq = 0; this.paused = false; this.over = false; this.endStrokes(); this.controls?.reset();
     this.pauseReqPending = false; this.pauseReqAt = -1e9;
     this.mines = []; this.vortices = [];
 
@@ -100,7 +112,7 @@ export class ClientScene extends Phaser.Scene {
     this.hud.show(true);
     this.hud.setItems(this.levels);
     this.hud.onPause = () => this.requestPause();
-    this.hud.toast(`Уровень ${this.stageIdx + 1}: ${this.stage.name} · кооп`, 2200);
+    this.hud.toast(this.map ? `Глава ${this.chapter + 1}: ${CHAPTERS[this.chapter].goal}` : `${this.stage.name} · кооп — 10 волн`, 2200);
 
     this.cameras.main.startFollow(this.meImg, false, 1, 1);
     this.applyZoom();
@@ -114,7 +126,8 @@ export class ClientScene extends Phaser.Scene {
       if (session.onSnap === this.onSnap) { session.onMsg = null; session.onSnap = null; session.onClose = null; }
     });
 
-    this.keys = this.input.keyboard!.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,ESC,P') as Record<string, Phaser.Input.Keyboard.Key>;
+    this.controls = new Controls(this);
+    this.keys = this.input.keyboard!.addKeys('ESC,P') as Record<string, Phaser.Input.Keyboard.Key>;
     this.keys.ESC.on('down', () => this.requestPause());
     this.keys.P.on('down', () => this.requestPause());
     this.input.addPointer(3);
@@ -139,7 +152,7 @@ export class ClientScene extends Phaser.Scene {
     switch (m.t) {
       case 'choices': {
         const ch = (m.ids as string[]).map((id) => UPGRADES.find((u) => u.id === id)!).filter(Boolean);
-        this.paused = true; this.endStrokes(); this.joy = null;
+        this.paused = true; this.endStrokes(); this.controls?.reset();
         sfx.play('level');
         this.hud.showLevelUp(ch, this.levels, {
           rerolls: m.rr ?? 0,
@@ -151,7 +164,7 @@ export class ClientScene extends Phaser.Scene {
       }
       case 'picked': this.paused = false; this.hud.showWait(null); break;
       case 'paused':
-        this.paused = true; this.endStrokes(); this.joy = null;
+        this.paused = true; this.endStrokes(); this.controls?.reset();
         this.pauseReqPending = false; this.hud.showWait(null);
         this.hud.showPause(() => this.net.send({ t: 'resume' }), () => this.game.events.emit('menu'), 'Продолжить может любой из игроков');
         break;
@@ -164,6 +177,7 @@ export class ClientScene extends Phaser.Scene {
         if (this.pauseReqPending) { this.pauseReqPending = false; this.pauseReqAt = performance.now(); this.hud.showWait(null); this.hud.toast('Напарник отклонил паузу'); }
         break;
       case 'end': this.end(m); break;
+      case 'ev': for (const e of m.ev as unknown[][]) this.applyEvent(e); break;
       case 'bye': this.onClose('Хост вышел из игры'); break;
     }
   };
@@ -199,6 +213,8 @@ export class ClientScene extends Phaser.Scene {
     this.lastSeq = h.s;
     const now = performance.now();
     this.hdr = { t: h.t, T: h.T, k: h.k, xp: h.xp, xn: h.xn, lv: h.lv, boss: h.boss };
+    this.wave = h.wv ?? 0;
+    if (h.ex && !this.exitSeen) this.exitSeen = true;
     this.tele = h.tele; this.cross = !!h.cross;
     this.ps = (h.pl as number[][]).map((a) => ({
       x: a[0], y: a[1], lvl: a[2], rot: a[3], hp: a[4], mhp: a[5], en: a[6], emx: a[7], alive: !!a[8], down: a[9], inv: a[10], hurt: !!a[11], tox: !!a[12],
@@ -238,7 +254,7 @@ export class ClientScene extends Phaser.Scene {
       if (g.kind === 1) img.setTint(0xb197fc); else img.clearTint();
     });
     this.projs = ps; this.projAt = now;
-    pool(this, this.projImgs, ps.length, 'acid', 6).forEach((img, i) => {
+    pool(this, this.projImgs, ps.length, 'acid', 7.5).forEach((img, i) => {
       const p = ps[i];
       img.setTexture(p.kind === 1 ? 'orb' : p.kind === 3 ? 'spear' : p.kind === 4 ? 'shard' : 'acid');
       if (p.kind === 2) img.setTint(0x66d9e8); else img.clearTint();
@@ -295,6 +311,12 @@ export class ClientScene extends Phaser.Scene {
         this.chunks.hitTile(tx, ty, hp, max);
         break;
       }
+      case 'D': {
+        const [tx, ty, st] = [n(1), n(2), n(3)];
+        this.world.setKind(tx, ty, st === 0 ? K_DOOR : st === 1 ? K_DOOROPEN : K_FLOOR);
+        this.chunks.setDoor(tx, ty, st);
+        break;
+      }
       case 'g': this.segs.push({ x1: n(1), y1: n(2), x2: n(3), y2: n(4), born: now, kind: (['blade', 'dull', 'echo'] as const)[n(5)], width: n(6) }); break;
       case 'B': this.burns.push({ x1: n(1), y1: n(2), x2: n(3), y2: n(4), until: now + n(5), w: n(6) }); break;
     }
@@ -322,18 +344,16 @@ export class ClientScene extends Phaser.Scene {
   }
 
   // ---------- Ввод ----------
-  private inJoyZone(x: number, y: number) {
-    const w = window.innerWidth, h = window.innerHeight;
-    return w > h ? x < w * 0.4 : x < w * 0.55 && y > h * 0.5;
-  }
-  private joyR() { return Phaser.Math.Clamp(Math.min(window.innerWidth, window.innerHeight) * 0.11, 44, 70); }
-
   private onDown(p: Phaser.Input.Pointer) {
     if (this.paused || this.over || !this.alive) return;
     const sx = p.x / this.dpr, sy = p.y / this.dpr;
-    if (p.wasTouch) this.touchSeen = true;
-    if (p.wasTouch && !this.joy && this.inJoyZone(sx, sy)) { this.joy = { id: p.id, bx: sx, by: sy, x: sx, y: sy }; return; }
+    if (this.controls.down(p.id, sx, sy, p.wasTouch)) return;
     const w = this.cameras.main.getWorldPoint(p.x, p.y);
+    const tx = Math.floor(w.x / TILE), ty = Math.floor(w.y / TILE), k = this.world.kind(tx, ty);
+    if ((k === K_DOOR || k === K_DOOROPEN) && Math.hypot((tx + 0.5) * TILE - this.me.x, (ty + 0.5) * TILE - this.me.y) < TILE * 2.6) {
+      this.net.send({ t: 'door', tx, ty });
+      return;
+    }
     const sid = ++this.sidSeq;
     this.strokes.set(p.id, { sid, lastSX: sx, lastSY: sy, lastT: performance.now(), px: w.x, py: w.y, moved: false, charged: false });
     this.net.send({ t: 'sd', s: sid, x: Math.round(w.x), y: Math.round(w.y) });
@@ -342,7 +362,7 @@ export class ClientScene extends Phaser.Scene {
 
   private onMove(p: Phaser.Input.Pointer) {
     const sx = p.x / this.dpr, sy = p.y / this.dpr;
-    if (this.joy && p.id === this.joy.id) { this.joy.x = sx; this.joy.y = sy; return; }
+    if (this.controls.move(p.id, sx, sy)) return;
     const s = this.strokes.get(p.id);
     if (!s || this.paused || this.over) return;
     const now = performance.now();
@@ -365,7 +385,7 @@ export class ClientScene extends Phaser.Scene {
   }
 
   private onUp(p: Phaser.Input.Pointer) {
-    if (this.joy && p.id === this.joy.id) { this.joy = null; return; }
+    if (this.controls.up(p.id)) return;
     const s = this.strokes.get(p.id);
     if (!s) return;
     this.strokes.delete(p.id);
@@ -380,32 +400,27 @@ export class ClientScene extends Phaser.Scene {
     const now = performance.now();
     const me = this.me;
 
+    let running = false;
     if (!this.paused && !this.over && this.alive) {
-      let dx = 0, dy = 0;
-      const k = this.keys;
-      if (k.A.isDown || k.LEFT.isDown) dx -= 1;
-      if (k.D.isDown || k.RIGHT.isDown) dx += 1;
-      if (k.W.isDown || k.UP.isDown) dy -= 1;
-      if (k.S.isDown || k.DOWN.isDown) dy += 1;
-      if (this.joy) {
-        const jx = this.joy.x - this.joy.bx, jy = this.joy.y - this.joy.by;
-        const l = Math.hypot(jx, jy), R = this.joyR();
-        if (l > 6) { const m = Math.min(1, l / R); dx = (jx / l) * m; dy = (jy / l) * m; }
-      }
-      const l = Math.hypot(dx, dy);
-      if (l > 1) { dx /= l; dy /= l; }
+      const { dx, dy, run, mag } = this.controls.read();
+      running = run;
       const tox = this.world.kindAtPx(me.x, me.y) === K_TOXIC;
-      const sp = PLAYER_SPEED * this.stats.speedMul * (tox ? 0.7 : 1);
+      const sp = PLAYER_SPEED * this.stats.speedMul * (tox ? 0.7 : 1) * (run ? RUN_MUL : 1);
+      if (mag > 0.05) {
+        // упёрлись в закрытую дверь — просим хоста открыть
+        const tx = Math.floor((me.x + dx * (PLAYER_R + 8)) / TILE), ty = Math.floor((me.y + dy * (PLAYER_R + 8)) / TILE);
+        if (this.world.kind(tx, ty) === K_DOOR && now - this.doorAt > 300) { this.doorAt = now; this.net.send({ t: 'door', tx, ty, bump: 1 }); }
+      }
       me.x += dx * sp * dt; me.y += dy * sp * dt;
       this.world.resolve(me, PLAYER_R);
       this.world.updateLevel(me);
-      me.moving = Math.min(1, l);
-      if (l > 0.05) me.rot = Math.atan2(dy, dx);
+      me.moving = mag;
+      if (mag > 0.05) me.rot = Math.atan2(dy, dx);
       this.energyPred = Math.min(this.stats.energyMax, this.energyPred + this.stats.energyRegen * dt);
     } else me.moving = 0;
-    if (now - this.mvAt > 50) {
+    if (now - this.mvAt > 33) {
       this.mvAt = now;
-      if (!this.over) this.net.send({ t: 'mv', x: Math.round(me.x), y: Math.round(me.y), l: me.lvl, r: +me.rot.toFixed(2), m: +me.moving.toFixed(2) });
+      if (!this.over) this.net.send({ t: 'mv', x: Math.round(me.x), y: Math.round(me.y), l: me.lvl, r: +me.rot.toFixed(2), m: +me.moving.toFixed(2), run: running ? 1 : 0 });
     }
     me.bob += dt * 14 * me.moving;
     const my = this.myState;
@@ -435,6 +450,7 @@ export class ClientScene extends Phaser.Scene {
       if (!p || !img.visible) return;
       img.setPosition(p.x + p.vx * ex, p.y + p.vy * ex);
       if (p.kind < 3) img.setRotation(img.rotation + dt * 8);
+      if (p.kind < 2 && Math.random() < dt * 25) this.vfx.burst(p.kind === 1 ? 'magic' : 'acid', 1, img.x, img.y);
     });
 
     if (this.stats.chargeMul > 0) {
@@ -487,21 +503,17 @@ export class ClientScene extends Phaser.Scene {
     this.vfx.draw(fg, now);
     this.hud.setBoss(this.hdr.boss?.[0] ?? null, this.hdr.boss?.[1] ?? 0);
 
-    if (this.joy) {
-      const R = this.joyR();
-      const jx = this.joy.x - this.joy.bx, jy = this.joy.y - this.joy.by;
-      const l = Math.hypot(jx, jy), m = l > R ? R / l : 1;
-      this.hud.setJoystick('active', this.joy.bx, this.joy.by, this.joy.bx + jx * m, this.joy.by + jy * m, R);
-    } else if (this.touchSeen && !this.paused && !this.over && this.alive) {
-      const R = this.joyR(), w = window.innerWidth, h = window.innerHeight;
-      if (w > h) this.hud.setJoystick('hint', R + 40, h - R - 40, 0, 0, R);
-      else this.hud.setJoystick('hint', w * 0.27, h - R - 60, 0, 0, R);
-    } else this.hud.setJoystick(null);
+    this.controls.render(this.hud, !this.paused && !this.over && this.alive);
+    if (this.map) {
+      const ex = (this.map.exit.x + 0.5) * TILE, ey = (this.map.exit.y + 0.5) * TILE;
+      if (!this.exitSeen && Math.hypot(ex - this.me.x, ey - this.me.y) < TILE * 16) this.exitSeen = true;
+      this.hud.setObjective(CHAPTERS[this.chapter].goal, this.exitSeen ? Math.atan2(ey - this.me.y, ex - this.me.x) : null, Math.round(Math.hypot(ex - this.me.x, ey - this.me.y) / TILE));
+    }
 
     const my = this.myState;
     this.hud.update({
       hp: my?.hp ?? 100, maxHp: my?.mhp ?? 100, energy: Math.min(this.energyPred, my?.emx ?? 100), energyMax: my?.emx ?? 100,
-      xp: this.hdr.xp, xpNext: this.hdr.xn, time: this.hdr.t, total: this.hdr.T, kills: this.hdr.k, level: this.hdr.lv,
+      xp: this.hdr.xp, xpNext: this.hdr.xn, time: this.hdr.t, total: this.hdr.T, kills: this.hdr.k, level: this.hdr.lv, wave: this.wave,
     });
   }
 }

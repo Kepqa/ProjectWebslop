@@ -126,6 +126,12 @@ export class Net {
     if (this.rel?.open) void this.rel.send(JSON.stringify(m));
   }
 
+  /** Срочные сообщения (эффекты, звуки) — по быстрому неупорядоченному каналу, без ожидания снимка. */
+  sendFast(m: Msg) {
+    if (this.snap?.open) void this.snap.send(JSON.stringify(m));
+    else this.send(m);
+  }
+
   sendSnap(b: ArrayBuffer) {
     const dc = this.snap?.dataChannel;
     if (!this.snap?.open || !dc) return;

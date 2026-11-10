@@ -5,6 +5,11 @@ export const CH = 16; // тайлов в чанке
 export const CPX = TILE * CH;
 
 export const K_FLOOR = 0, K_WALL = 1, K_CRATE = 2, K_RAMP = 3, K_PIT = 4, K_TOXIC = 5, K_GRAVE = 6;
+/** Двери (закрытая — твёрдая, зомби её ломают), выход и лазы, из которых лезут зомби. */
+export const K_DOOR = 7, K_DOOROPEN = 8, K_EXIT = 9, K_ENTRY = 10;
+
+/** Конечная карта (сюжет): тайлы задаются сеткой, снаружи — стена. */
+export interface GridMap { W: number; H: number; kind: Uint8Array }
 
 export interface GenOpts {
   plateau: number; walls: [number, number]; crates: [number, number];
@@ -38,7 +43,7 @@ function hash(a: number, b: number, seed: number) {
   return (h ^ (h >>> 16)) >>> 0;
 }
 
-export const isSolidKind = (k: number) => k === K_WALL || k === K_CRATE || k === K_GRAVE;
+export const isSolidKind = (k: number) => k === K_WALL || k === K_CRATE || k === K_GRAVE || k === K_DOOR;
 
 /**
  * Бесконечная процедурная карта из чанков.
@@ -50,7 +55,8 @@ export class World {
   private lastKey = NaN; private lastChunk: Chunk | null = null;
   crateHp = new Map<number, number>();
 
-  constructor(private seed: number, private gen: GenOpts) {}
+  constructor(private seed: number, private gen: GenOpts, private grid: GridMap | null = null) {}
+  get finite() { return this.grid; }
 
   private chunk(cx: number, cy: number): Chunk {
     const k = key2(cx, cy);
@@ -151,16 +157,26 @@ export class World {
   }
 
   /** Быстро заполняет сетку уровней окна N×N (-99 — непроходимо). */
-  levelGrid(ox: number, oy: number, N: number, out: Float32Array) {
+  levelGrid(ox: number, oy: number, N: number, out: Float32Array, doors: Uint8Array) {
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
       const [c, idx] = this.at(ox + i, oy + j);
       const k = c.kind[idx];
-      out[j * N + i] = isSolidKind(k) || k === K_PIT ? -99 : k === K_RAMP ? c.h[idx] + 0.5 : c.h[idx];
+      doors[j * N + i] = k === K_DOOR ? 1 : 0;
+      out[j * N + i] = k === K_DOOR ? c.h[idx] : isSolidKind(k) || k === K_PIT ? -99 : k === K_RAMP ? c.h[idx] + 0.5 : c.h[idx];
     }
   }
 
   // ---------- Генерация ----------
   private generate(cx: number, cy: number): Chunk {
+    if (this.grid) {
+      const { W, H, kind: gk } = this.grid;
+      const kind = new Uint8Array(CH * CH).fill(K_WALL), h = new Uint8Array(CH * CH);
+      for (let y = 0; y < CH; y++) for (let x = 0; x < CH; x++) {
+        const tx = cx * CH + x, ty = cy * CH + y;
+        if (tx >= 0 && ty >= 0 && tx < W && ty < H) kind[y * CH + x] = gk[ty * W + tx];
+      }
+      return { kind, h };
+    }
     const G = this.gen;
     const kind = new Uint8Array(CH * CH), h = new Uint8Array(CH * CH), res = new Uint8Array(CH * CH);
     const r = mulberry32(hash(cx, cy, this.seed));
@@ -322,6 +338,7 @@ export class FlowField {
   private dist = new Int32Array(FlowField.N ** 2);
   private tl = new Float32Array(FlowField.N ** 2);
   private pen = new Uint8Array(FlowField.N ** 2);
+  private doors = new Uint8Array(FlowField.N ** 2);
   private nxt = new Int32Array(FlowField.N ** 2);
   private hn = new Int32Array(FlowField.N ** 2 * 4);
   private hk = new Int32Array(FlowField.N ** 2 * 4);
@@ -357,7 +374,7 @@ export class FlowField {
   compute(world: World, ptx: number, pty: number) {
     const N = FlowField.N, INF = FlowField.INF;
     this.ox = ptx - N / 2; this.oy = pty - N / 2;
-    world.levelGrid(this.ox, this.oy, N, this.tl);
+    world.levelGrid(this.ox, this.oy, N, this.tl, this.doors);
     const tl = this.tl, pen = this.pen, dist = this.dist;
     for (let j = 1; j < N - 1; j++) for (let i = 1; i < N - 1; i++) {
       const c = j * N + i;
@@ -368,7 +385,7 @@ export class FlowField {
           if (v === -99 || Math.abs(v - tl[c]) > 0.5) { p = 6; break; }
         }
       }
-      pen[c] = p;
+      pen[c] = this.doors[c] ? 60 : p; // через закрытую дверь — дорого, но можно (зомби её выломают)
     }
     dist.fill(INF);
     const start = (pty - this.oy) * N + (ptx - this.ox);
@@ -486,6 +503,18 @@ export function drawChunk(g: Phaser.GameObjects.Graphics, world: World, cx: numb
     }
     const base = FC[h];
     g.fillStyle(shade(base, 0.94 + r() * 0.12)).fillRect(px, py, T, T);
+    if (k === K_EXIT) {
+      g.fillStyle(0x2b8a3e).fillRect(px + 2, py + 2, T - 4, T - 4);
+      g.fillStyle(0x69db7c, 0.9).fillTriangle(px + T / 2, py + 8, px + 10, py + 26, px + T - 10, py + 26).fillRect(px + T / 2 - 5, py + 24, 10, 16);
+      continue;
+    }
+    if (k === K_ENTRY) {
+      g.fillStyle(0x0b0c0e).fillRoundedRect(px + 5, py + 5, T - 10, T - 10, 8);
+      g.lineStyle(3, 0x7a4f28).lineBetween(px + 8, py + 14, px + T - 8, py + 20).lineBetween(px + 10, py + T - 14, px + T - 10, py + T - 22);
+      g.fillStyle(0xff6b6b, 0.5).fillCircle(px + 16, py + 24, 2).fillCircle(px + 26, py + 24, 2);
+      continue;
+    }
+    if (k === K_DOOR || k === K_DOOROPEN) continue;
     for (let n = 0; n < 2; n++) {
       g.fillStyle(r() < 0.5 ? shade(base, 1.18) : shade(base, 0.8), 0.8);
       g.fillRect(px + r() * (T - 6), py + r() * (T - 6), 2 + r() * 5, 2 + r() * 4);

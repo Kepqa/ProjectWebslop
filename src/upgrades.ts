@@ -29,6 +29,10 @@ export const SYNERGIES: SynergyDef[] = [
   { id: 'thirst', icon: '🍷', name: 'Жажда', a: 'bloodblade', b: 'rend', desc: 'Убийства кровотечением лечат 1 HP' },
   { id: 'doublerune', icon: '♾️', name: 'Двойная печать', a: 'rune', b: 'echo', desc: 'Печать повторяется через 0.5с' },
   { id: 'blackhole', icon: '🕳️', name: 'Чёрная дыра', a: 'censer', b: 'magnet', desc: 'Аура кадила затягивает зомби к вам' },
+  { id: 'kaleido', icon: '🔷', name: 'Калейдоскоп', a: 'mirror', b: 'cross', desc: 'Зеркальный след тоже взрывается на пересечениях, взрывы +50%' },
+  { id: 'echocross', icon: '♻️', name: 'Эхо-перекрёсток', a: 'echo', b: 'cross', desc: 'Эхо-разрез взрывается на пересечениях со следами' },
+  { id: 'echofire', icon: '🔥', name: 'Пламя эха', a: 'echo', b: 'burn', desc: 'Эхо-разрез тоже оставляет огненный след' },
+  { id: 'mirrormines', icon: '🎇', name: 'Зеркальные мины', a: 'mirror', b: 'mines', desc: 'Двойник тоже роняет мины' },
 ];
 
 export function activeSynergies(l: Levels) {
@@ -105,7 +109,7 @@ export const UPGRADES: UpgradeDef[] = [
     desc: (l) => l === 1 ? 'Задержи палец на месте 0.5с, затем режь: свайп ×2 урона и шире' : '+0.4 к множителю заряда' },
 
   // --- Тринкеты ---
-  { id: 'censer', kind: K.t, icon: '🏮', name: 'Гнилое кадило', max: 5, desc: (l) => l === 1 ? 'Аура вокруг вас жжёт ближайших зомби' : 'Аура шире и сильнее' },
+  { id: 'censer', kind: K.t, icon: '🏮', name: 'Гнилое кадило', max: 5, desc: (l) => l === 1 ? 'Широкая аура вокруг вас жжёт зомби' : 'Аура шире и сильнее' },
   { id: 'bones', kind: K.t, icon: '🦴', name: 'Хоровод костей', max: 5, desc: (l) => l === 1 ? 'Вокруг вас кружит кость и бьёт зомби' : '+1 кость, больше урона' },
   { id: 'magnet', kind: K.t, icon: '🧲', name: 'Ржавый магнит', max: 4, desc: () => 'Опыт и аптечки притягиваются на 50% дальше' },
   { id: 'tooth', kind: K.t, icon: '🦷', name: 'Клык вампира', max: 4, desc: (l) => `Лечит 4 HP за каждые ${Math.max(10, 30 - 5 * l)} убийств` },
@@ -179,8 +183,8 @@ export function computeStats(l: Levels): Stats {
     frostSlow: Math.max(0.2, 0.75 - 0.13 * v('frost')),
     runeMult: v('rune') ? 2 + 1 * (v('rune') - 1) : 0,
     runeCd: 3.4 - 0.4 * v('rune'),
-    auraRadius: v('censer') ? 60 + 15 * v('censer') : 0,
-    auraDps: 3 * v('censer'),
+    auraRadius: v('censer') ? 85 + 20 * v('censer') : 0,
+    auraDps: 4 * v('censer'),
     bones: v('bones'),
     boneDmg: 4 + v('bones'),
     pickupRadius: 70 * (1 + 0.5 * v('magnet')),

@@ -7,6 +7,8 @@ import { session } from './session';
 import { sfx } from './sfx';
 import { STAGES, loadProgress } from './stages';
 import { fetchStats, isDev, trackRun, trackVisit } from './stats';
+import { CHAPTERS } from './story';
+import { gyro } from './controls';
 
 // Рендерим в физическом разрешении экрана (до 2x), чтобы на retina было чётко
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -18,24 +20,44 @@ let lobby: Lobby = 'idle';
 
 function fmt(t: number) { return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; }
 
-function renderStages() {
+type Mode = 'survival' | 'story';
+interface Pick { mode: Mode; stage: number; chapter: number }
+
+/** Карточки уровней выживания и глав сюжета. onPick — что делать по нажатию. */
+function cards(wrapId: string, onPick: (p: Pick) => void, opts: { story?: boolean; survival?: boolean; disabled?: boolean } = {}) {
   const p = loadProgress();
-  const wrap = $('stages');
+  const wrap = $(wrapId);
   wrap.innerHTML = '';
-  STAGES.forEach((st, i) => {
+  const add = (cls: string, html: string, locked: boolean, pick: Pick) => {
     const b = document.createElement('button');
-    const locked = i > p.unlocked && !isDev();
-    b.className = `stage s${i + 1}`;
-    // гость ждёт выбора хоста; хост без напарника не может стартовать кооп
-    b.disabled = locked || lobby === 'joined' || lobby === 'joining' || lobby === 'hosting';
-    const stat = locked ? '🔒 Пройди предыдущий уровень'
-      : p.cleared[i] ? `✅ Пройден · лучшее время ${fmt(p.best[i] ?? 0)}`
-        : p.best[i] ? `Лучшее время ${fmt(p.best[i])}` : 'Новый';
-    const cta = lobby === 'host-ready' && !locked ? '<span class="sstat">▶ Играть вдвоём</span>' : '';
-    b.innerHTML = `<span class="snum">Уровень ${i + 1}</span><span class="sname">${st.name}</span><span>${st.desc}</span><span class="sstat">${stat}</span>${cta}`;
-    b.addEventListener('click', () => (lobby === 'host-ready' ? startCoopHost(i) : startSolo(i)));
+    b.className = `stage ${cls}`;
+    b.disabled = locked || !!opts.disabled;
+    b.innerHTML = html;
+    b.addEventListener('click', () => onPick(pick));
     wrap.appendChild(b);
+  };
+  if (opts.story) CHAPTERS.forEach((ch, i) => {
+    const locked = !ch.ready || (i > (p.story ?? 0) && !isDev());
+    const st = !ch.ready ? '🔨 Скоро' : locked ? '🔒' : (p.story ?? 0) > i ? '✅ Пройдена' : '▶ Играть';
+    add(`s1 ${ch.ready ? '' : 'locked-soon'}`, `<span class="snum">Глава ${i + 1}</span><span class="sname">${ch.name}</span><span class="sdesc">${ch.goal}</span><span class="sstat">${st}</span>`, locked, { mode: 'story', stage: 0, chapter: i });
   });
+  if (opts.survival) STAGES.forEach((st, i) => {
+    const locked = i > p.unlocked && !isDev();
+    const stat = locked ? '🔒 Пройди предыдущий' : p.cleared[i] ? `✅ ${fmt(p.best[i] ?? 0)}` : p.best[i] ? `Рекорд ${fmt(p.best[i])}` : '▶ Играть';
+    add(`s${i + 1}`, `<span class="snum">Арена ${i + 1}</span><span class="sname">${st.name}</span><span class="sstat">${stat}</span>`, locked, { mode: 'survival', stage: i, chapter: 0 });
+  });
+}
+
+function renderStages() {
+  cards('chapters', (p) => startSolo(p), { story: true });
+  cards('stages', (p) => startSolo(p), { survival: true });
+  const ready = lobby === 'host-ready';
+  $('coop-choices').classList.toggle('hidden', !ready);
+  if (ready) cards('coop-choices', (p) => startCoopHost(p), { story: true, survival: true });
+}
+
+function showPanel(id: 'main' | 'story' | 'survival' | 'coop') {
+  for (const k of ['main', 'story', 'survival', 'coop']) $(`menu-${k}`).classList.toggle('hidden', k !== id);
 }
 
 function setLobby(state: Lobby, html = '') {
@@ -62,7 +84,7 @@ function ensureGame() {
   game.scene.add('game', GameScene, false);
   game.scene.add('client', ClientScene, false);
   game.events.on('menu', () => showMenu(true));
-  game.events.on('coop-start', (stage: number) => startCoopHost(stage));
+  game.events.on('coop-start', (p: Pick) => startCoopHost(p));
   let t = 0;
   const onResize = () => {
     clearTimeout(t);
@@ -97,19 +119,20 @@ function showMenu(leaveRoom: boolean) {
   for (const id of ['joy-base', 'joy-knob']) $(id).style.display = 'none';
   document.body.style.background = '';
   renderStages();
+  showPanel(lobby === 'idle' ? 'main' : 'coop');
   $('start').classList.remove('hidden');
 }
 
-function startSolo(stage: number) { trackRun('solo'); runScene('game', { stage }); }
+function startSolo(p: Pick) { trackRun('solo'); runScene('game', { ...p }); }
 
-function startCoopHost(stage: number) {
+function startCoopHost(p: Pick) {
   const net = session.net;
   if (!net?.connected) { showMenu(true); return; }
   const seed = (Math.random() * 1e9) | 0;
   const time = Number(new URLSearchParams(location.search).get('time')) || undefined;
-  net.send({ t: 'start', stage, seed, time });
+  net.send({ t: 'start', ...p, seed, time });
   trackRun('coop');
-  runScene('game', { stage, seed, coop: true });
+  runScene('game', { ...p, seed, coop: true });
 }
 
 // ---------- Сеть / лобби ----------
@@ -123,7 +146,7 @@ function closeNet() {
 function bindNet(net: Net) {
   session.net = net;
   net.onMsg = (m: Msg) => {
-    if (m.t === 'start' && net.role === 'client') { runScene('client', { stage: m.stage, seed: m.seed, time: m.time }); return; }
+    if (m.t === 'start' && net.role === 'client') { runScene('client', { stage: m.stage, seed: m.seed, time: m.time, mode: m.mode, chapter: m.chapter }); return; }
     session.onMsg?.(m);
   };
   net.onSnap = (b) => session.onSnap?.(b);
@@ -155,7 +178,7 @@ async function hostRoom() {
     setLobby('hosting', roomHtml(net.code, 'Продиктуйте код напарнику. Ждём подключения…'));
     net.onOpen = () => {
       sfx.play('chest');
-      setLobby('host-ready', roomHtml(net.code, '✅ Напарник подключился! Выберите уровень выше.'));
+      setLobby('host-ready', roomHtml(net.code, '✅ Напарник подключился! Выберите, во что играть:'));
     };
   } catch (e) {
     setLobby('idle');
@@ -175,7 +198,7 @@ async function joinRoom() {
     bindNet(net);
     net.onOpen = () => {
       sfx.play('chest');
-      setLobby('joined', `✅ Подключено к комнате <b>${code}</b>. Хост выбирает уровень…`);
+      setLobby('joined', `✅ Подключено к комнате <b>${code}</b>. Хост выбирает, во что играть…`);
     };
   } catch (e) {
     setLobby('idle');
@@ -191,12 +214,32 @@ $('coop-cancel').addEventListener('click', () => closeNet());
 
 // ---------- Звук ----------
 const muteBtn = $('mute');
-const syncMute = () => { muteBtn.textContent = sfx.muted ? '🔇' : '🔊'; };
+const syncMute = () => {
+  muteBtn.textContent = sfx.muted ? '🔇' : '🔊';
+  $('set-sound').textContent = sfx.muted ? '🔇 Звук выкл' : '🔊 Звук';
+  $('set-sound').classList.toggle('on', !sfx.muted);
+};
 syncMute();
-muteBtn.addEventListener('click', () => {
+const toggleMute = () => {
   sfx.unlock(); sfx.setMuted(!sfx.muted); syncMute();
   if (!sfx.muted) setTimeout(() => sfx.play('chest'), 60); // проверочный звук
+};
+muteBtn.addEventListener('click', toggleMute);
+$('set-sound').addEventListener('click', toggleMute);
+
+// Гироскоп
+const syncGyro = () => { $('set-gyro').textContent = `📱 Гироскоп: ${gyro.enabled ? 'вкл' : 'выкл'}`; $('set-gyro').classList.toggle('on', gyro.enabled); };
+if (!gyro.supported || !('ontouchstart' in window)) $('set-gyro').classList.add('hidden');
+syncGyro();
+$('set-gyro').addEventListener('click', async () => {
+  if (gyro.enabled) gyro.disable();
+  else if (!(await gyro.enable())) alert('Нет доступа к гироскопу');
+  syncGyro();
 });
+
+// Навигация меню
+document.querySelectorAll<HTMLButtonElement>('.mode').forEach((b) => b.addEventListener('click', () => { sfx.unlock(); showPanel(b.dataset.go as 'story'); }));
+document.querySelectorAll<HTMLButtonElement>('.back').forEach((b) => b.addEventListener('click', () => showPanel('main')));
 // iOS считает жестом только click/touchend/keydown (не pointerdown) — будим звук на них
 for (const ev of ['touchend', 'click', 'keydown']) document.addEventListener(ev, () => sfx.unlock(), { passive: true });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) sfx.unlock(); });
@@ -208,7 +251,7 @@ function renderDevInfo() {
   const el = $('dev-info');
   el.classList.toggle('hidden', !isDev());
   if (!isDev()) return;
-  el.textContent = '🛠 Режим разработчика: все уровни открыты, в игре — кнопка 🛠';
+  el.textContent = '🛠 Режим разработчика';
   void fetchStats().then((st) => {
     if (st.users !== null && st.users !== undefined) el.textContent += ` · игроков: ${st.users}, забегов: ${st.runs ?? '?'}`;
   });

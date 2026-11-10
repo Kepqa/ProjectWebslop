@@ -75,8 +75,20 @@ export class Hud {
     clearInterval(this.voteTimer);
   }
 
-  showPause(onResume: () => void, onExit: () => void, note = '') {
+  /** Цель сюжета и компас к выходу (угол в радианах, null — ещё не найден). */
+  setObjective(goal: string | null, angle: number | null = null, dist: number | null = null) {
+    const el = $('objective');
+    if (!goal) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    const st = `${goal}|${angle === null ? '' : angle.toFixed(1)}|${dist}`;
+    if (el.dataset.st === st) return;
+    el.dataset.st = st;
+    el.innerHTML = angle === null ? `🎯 ${goal}` : `<span class="arrow" style="transform:rotate(${angle}rad)">➜</span> Выход · ${dist} м`;
+  }
+
+  showPause(onResume: () => void, onExit: () => void, note = '', levels?: Levels) {
     $('pause-note').textContent = note;
+    $('pause-build').innerHTML = levels ? this.buildHtml(levels) : '';
     $('pause-resume').onclick = () => onResume();
     $('pause-exit').onclick = () => onExit();
     $('pause-ov').classList.remove('hidden');
@@ -129,24 +141,27 @@ export class Hud {
     this.bossFill.style.width = `${Math.max(0, frac) * 100}%`;
   }
 
-  /** Джойстик в CSS-пикселях. mode: 'active' — зажат, 'hint' — подсказка, null — скрыт. */
-  setJoystick(mode: 'active' | 'hint' | null, bx = 0, by = 0, kx = 0, ky = 0, R = 60) {
-    const st = `${mode}|${bx | 0}|${by | 0}|${kx | 0}|${ky | 0}|${R | 0}`;
+  /** Джойстик в CSS-пикселях: внутренний круг R — шаг, внешний O — бег. */
+  setJoystick(mode: 'active' | 'hint' | null, bx = 0, by = 0, kx = 0, ky = 0, R = 50, O = 90, run = false) {
+    const st = `${mode}|${bx | 0}|${by | 0}|${kx | 0}|${ky | 0}|${R | 0}|${run}`;
     if (st === this.joyState) return;
     this.joyState = st;
-    if (!mode) { this.joyBase.style.display = 'none'; this.joyKnob.style.display = 'none'; return; }
-    this.joyBase.style.display = 'block';
-    this.joyBase.className = mode;
-    Object.assign(this.joyBase.style, { left: `${bx - R}px`, top: `${by - R}px`, width: `${R * 2}px`, height: `${R * 2}px` });
+    const outer = $('joy-outer');
+    if (!mode) { this.joyBase.style.display = 'none'; this.joyKnob.style.display = 'none'; outer.style.display = 'none'; return; }
+    for (const [el, r, cls] of [[this.joyBase, R, mode], [outer, O, mode + (run ? ' run' : '')]] as const) {
+      el.style.display = 'block'; el.className = cls;
+      Object.assign(el.style, { left: `${bx - r}px`, top: `${by - r}px`, width: `${r * 2}px`, height: `${r * 2}px` });
+    }
     if (mode === 'active') {
-      const k = R * 0.45;
+      const k = R * 0.5;
       this.joyKnob.style.display = 'block';
+      this.joyKnob.className = run ? 'run' : '';
       Object.assign(this.joyKnob.style, { left: `${kx - k}px`, top: `${ky - k}px`, width: `${k * 2}px`, height: `${k * 2}px` });
     } else this.joyKnob.style.display = 'none';
   }
 
-  update(s: { hp: number; maxHp: number; energy: number; energyMax: number; xp: number; xpNext: number; time: number; total: number; kills: number; level: number }) {
-    const key = [Math.ceil(s.hp), s.maxHp, Math.round(s.energy), s.energyMax, Math.floor(s.xp), s.xpNext, Math.floor(s.time), s.kills, s.level].join('|');
+  update(s: { hp: number; maxHp: number; energy: number; energyMax: number; xp: number; xpNext: number; time: number; total: number; kills: number; level: number; wave?: number }) {
+    const key = [s.wave ?? 0, Math.ceil(s.hp), s.maxHp, Math.round(s.energy), s.energyMax, Math.floor(s.xp), s.xpNext, Math.floor(s.time), s.kills, s.level].join('|');
     if (key === this.last) return;
     this.last = key;
     this.hpFill.style.width = `${Math.max(0, s.hp / s.maxHp) * 100}%`;
@@ -155,8 +170,8 @@ export class Hud {
     this.xpFill.style.width = `${Math.min(1, s.xp / s.xpNext) * 100}%`;
     const t = Math.floor(s.time);
     const f = (x: number) => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`;
-    this.timeEl.textContent = `${f(t)} / ${f(Math.floor(s.total))}`;
-    this.timeEl.classList.toggle('final', s.total - t <= 90);
+    this.timeEl.textContent = !isFinite(s.total) || !s.total ? f(t) : s.wave ? `Волна ${s.wave}/10 · ${f(t)}` : `${f(t)} / ${f(Math.floor(s.total))}`;
+    this.timeEl.classList.toggle('final', s.wave === 10 || s.total - t <= 60);
     this.killsEl.textContent = String(s.kills);
     this.levelEl.textContent = String(s.level);
   }
@@ -226,16 +241,21 @@ export class Hud {
     rr.disabled = o.rerolls <= 0;
     rr.onclick = () => { if (done || o.rerolls <= 0) return; done = true; sfx.play('reroll'); o.onReroll(); };
     sk.onclick = () => finish(null, o.onSkip);
-    // текущая сборка
-    const chip = (u: UpgradeDef) => `<span>${u.icon}<sub>${levels[u.id]}</sub></span>`;
+    $('build').innerHTML = this.buildHtml(levels);
+    wrap.classList.remove('hidden');
+  }
+
+  /** Сборка: слоты, предметы с уровнями и активные синергии. */
+  buildHtml(levels: Levels) {
+    const used = slotsUsed(levels);
+    const chip = (u: UpgradeDef) => `<span title="${u.name}">${u.icon}<sub>${levels[u.id]}</sub></span>`;
     const owned = UPGRADES.filter((u) => levels[u.id]);
     const blade = owned.filter((u) => u.kind !== 'trinket');
     const trink = owned.filter((u) => u.kind === 'trinket');
     const syn = activeSynergies(levels);
-    $('build').innerHTML = `<div><b>Клинок ${used.blade}/${SLOTS.blade}</b> ${blade.map(chip).join('') || '—'}</div>
+    return `<div><b>Клинок ${used.blade}/${SLOTS.blade}</b> ${blade.map(chip).join('') || '—'}</div>
       <div><b>Тринкеты ${used.trinket}/${SLOTS.trinket}</b> ${trink.map(chip).join('') || '—'}</div>
       ${syn.length ? `<div class="bsyn"><b>Синергии</b> ${syn.map((x) => `${x.icon} ${x.name}`).join(' · ')}</div>` : ''}`;
-    wrap.classList.remove('hidden');
   }
 
   showEnd(o: { title: string; text: string; primary: { label: string; fn: () => void } | null; secondary: { label: string; fn: () => void }; win?: boolean }) {

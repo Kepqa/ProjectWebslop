@@ -31,8 +31,9 @@
     <div id="boss" class="hidden"><div id="boss-name"></div><div class="bar"><div class="fill" id="boss-fill"></div></div></div>
   </div>
 
-  <div id="joy-base"></div><div id="joy-knob"></div>
+  <div id="joy-outer"></div><div id="joy-base"></div><div id="joy-knob"></div>
   <div id="dev-panel" class="hidden"><div id="dev-stats"></div><div id="dev-buttons"></div></div>
+  <div id="objective" class="hidden"></div>
   <div id="toast"></div>
   <div id="wait" class="hidden"></div>
   <div id="countdown" class="hidden"></div>
@@ -40,6 +41,7 @@
   <div id="pause-ov" class="overlay hidden">
     <h2>Пауза</h2>
     <p id="pause-note"></p>
+    <div id="pause-build" class="buildbox"></div>
     <div class="end-buttons"><button id="pause-resume">Продолжить</button><button id="pause-exit" class="secondary">Выйти в меню</button></div>
   </div>
 
@@ -56,27 +58,44 @@
     <div id="build"></div>
   </div>
 
-  <div id="start" class="overlay">
-    <h1 id="title">Swipe Survivors</h1>
+  <div id="start" class="overlay menu">
+    <h1 id="title">Swipe<br>Survivors</h1>
     <div id="dev-info" class="hidden"></div>
-    <ul class="howto">
-      <li><b>Движение:</b> джойстик слева (в портрете — внизу слева) или WASD</li>
-      <li><b>Удар:</b> быстрый свайп режет зомби, ящики, могилы и снаряды. Медленный — не режет</li>
-      <li><b>Апгрейды:</b> на каждом уровне героя выбирай улучшение свайпа или тринкет — например, печать круга</li>
-      <li><b>Рельеф:</b> на возвышенность ведут только пандусы. Прыгуны запрыгивают сами</li>
-      <li>Продержись <b>10 минут</b>, чтобы пройти уровень и открыть следующий</li>
-    </ul>
-    <div class="stages" id="stages"></div>
-    <div class="coop">
-      <div class="coop-title">Кооп по сети — каждый со своего устройства</div>
-      <div class="coop-row" id="coop-idle">
-        <button id="coop-host" class="secondary">Создать комнату</button>
-        <span class="coop-or">или</span>
-        <input id="coop-code" maxlength="5" placeholder="КОД" autocomplete="off" autocapitalize="characters" spellcheck="false" />
-        <button id="coop-join" class="secondary">Войти</button>
+    <div class="tips"><span>👆 свайп — удар</span><span>🕹 джойстик · дальше — бег</span><span>⬆ уровень → предмет</span></div>
+
+    <div id="menu-main" class="modes">
+      <button class="mode" data-go="story"><i>📖</i><b>Сюжет</b><small>Выберись из здания</small></button>
+      <button class="mode" data-go="survival"><i>⚔️</i><b>Выживание</b><small>10 волн · боссы</small></button>
+      <button class="mode" data-go="coop"><i>👥</i><b>Кооп</b><small>По сети, по коду</small></button>
+    </div>
+
+    <div id="menu-story" class="panel hidden">
+      <div class="panel-title"><button class="back">←</button>Сюжет</div>
+      <div class="list" id="chapters"></div>
+    </div>
+
+    <div id="menu-survival" class="panel hidden">
+      <div class="panel-title"><button class="back">←</button>Выживание</div>
+      <div class="list" id="stages"></div>
+    </div>
+
+    <div id="menu-coop" class="panel hidden">
+      <div class="panel-title"><button class="back">←</button>Кооп</div>
+      <div class="coop">
+        <div class="coop-row" id="coop-idle">
+          <button id="coop-host">Создать комнату</button>
+          <input id="coop-code" maxlength="5" placeholder="КОД" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+          <button id="coop-join" class="secondary">Войти</button>
+        </div>
+        <div id="coop-status" class="hidden"></div>
+        <div class="list hidden" id="coop-choices"></div>
+        <button id="coop-cancel" class="secondary small hidden">Отмена</button>
       </div>
-      <div id="coop-status" class="hidden"></div>
-      <button id="coop-cancel" class="secondary small hidden">Отмена</button>
+    </div>
+
+    <div class="settings">
+      <button id="set-sound" class="chip">🔊 Звук</button>
+      <button id="set-gyro" class="chip">📱 Гироскоп: выкл</button>
     </div>
   </div>
 

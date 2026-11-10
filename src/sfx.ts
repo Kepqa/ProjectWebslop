@@ -62,7 +62,7 @@ class Sfx {
     if (!this.ctx) {
       const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AC) return;
-      const ctx = new AC();
+      const ctx = new AC({ latencyHint: 'interactive' });
       const comp = ctx.createDynamicsCompressor();
       comp.threshold.value = -18; comp.knee.value = 10; comp.ratio.value = 8;
       comp.attack.value = 0.003; comp.release.value = 0.12;

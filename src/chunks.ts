@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { S } from './textures';
-import { World, TILE, CH, CPX, K_CRATE, K_GRAVE, key2, drawChunk, type Palette } from './world';
+import { World, TILE, CH, CPX, K_CRATE, K_GRAVE, K_DOOR, K_DOOROPEN, key2, drawChunk, type Palette } from './world';
 
 /** Показывает чанки карты вокруг точки и картинки разрушаемых тайлов (ящики, могилы). */
 export class ChunkView {
@@ -49,8 +49,13 @@ export class ChunkView {
       for (let y = 0; y < CH; y++) for (let x = 0; x < CH; x++) {
         const tx = cx * CH + x, ty = cy * CH + y;
         const kind = this.world.kind(tx, ty);
-        if (kind !== K_CRATE && kind !== K_GRAVE) continue;
         const ck = key2(tx, ty);
+        if (kind === K_DOOR || kind === K_DOOROPEN) {
+          this.tileImgs.set(ck, this.makeDoor(tx, ty, kind === K_DOOR));
+          objs.push(ck);
+          continue;
+        }
+        if (kind !== K_CRATE && kind !== K_GRAVE) continue;
         const img = this.scene.add.image((tx + 0.5) * TILE, (ty + 0.5) * TILE, kind === K_GRAVE ? 'grave' : 'crate').setScale(1 / S).setDepth(3);
         ChunkView.tint(img, this.world.crateHp.get(ck) ?? ChunkView.maxHp(kind), ChunkView.maxHp(kind));
         this.tileImgs.set(ck, img);
@@ -65,6 +70,23 @@ export class ChunkView {
       for (const ck of c.objs) { this.tileImgs.get(ck)?.destroy(); this.tileImgs.delete(ck); }
       this.gfx.delete(k);
     }
+  }
+
+  /** Дверь: проход север-юг — створка лежит поперёк (горизонтально), иначе вертикально. */
+  private makeDoor(tx: number, ty: number, closed: boolean) {
+    const ns = this.world.kind(tx - 1, ty) === 1 || this.world.kind(tx + 1, ty) === 1;
+    const img = this.scene.add.image((tx + 0.5) * TILE, (ty + 0.5) * TILE, closed ? 'door' : 'door_open').setScale(1 / S).setDepth(3.2);
+    img.setRotation(ns ? 0 : Math.PI / 2);
+    return img;
+  }
+
+  /** Состояние двери: 0 закрыта, 1 открыта, 2 выломана. */
+  setDoor(tx: number, ty: number, state: number) {
+    const img = this.tileImgs.get(key2(tx, ty));
+    if (!img) return;
+    if (state === 2) { img.destroy(); this.tileImgs.delete(key2(tx, ty)); return; }
+    img.setTexture(state === 0 ? 'door' : 'door_open');
+    this.scene.tweens.add({ targets: img, scaleX: 1.15 / S, duration: 70, yoyo: true });
   }
 
   /** Тайл получил удар (hp>0) или сломан (hp<=0). */

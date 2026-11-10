@@ -67,10 +67,12 @@ export function makeTextures(scene: Phaser.Scene) {
   g.fillStyle(0x63e6be, 0.5).fillCircle(25 * s, 40 * s, 3 * s);
   gen('grave', 50, 50);
 
-  g.fillStyle(0x9775fa, 0.35).fillCircle(9 * s, 9 * s, 9 * s);
-  g.fillStyle(0xd0bfff).fillCircle(9 * s, 9 * s, 5.5 * s);
-  g.fillStyle(0xffffff, 0.9).fillCircle(7 * s, 7 * s, 2 * s);
-  gen('orb', 18, 18);
+  g.fillStyle(0xe5dbff, 0.25).fillCircle(14 * s, 14 * s, 14 * s);
+  g.fillStyle(0x9775fa, 0.5).fillCircle(14 * s, 14 * s, 11 * s);
+  g.fillStyle(0x2b1a5c).fillCircle(14 * s, 14 * s, 8 * s);
+  g.fillStyle(0xe5dbff).fillCircle(14 * s, 14 * s, 6.5 * s);
+  g.fillStyle(0xffffff, 0.9).fillCircle(11.5 * s, 11.5 * s, 2.5 * s);
+  gen('orb', 28, 28);
 
   g.fillStyle(0xe7f5ff);
   g.fillTriangle(14 * s, 0, 18 * s, 14 * s, 10 * s, 14 * s).fillTriangle(28 * s, 14 * s, 14 * s, 18 * s, 14 * s, 10 * s);
@@ -104,10 +106,12 @@ export function makeTextures(scene: Phaser.Scene) {
     .fillCircle(24 * s, 10 * s, 5 * s).fillCircle(26 * s, 22 * s, 3 * s).fillCircle(5 * s, 9 * s, 2 * s);
   gen('splat', 32, 32);
 
-  g.fillStyle(0x94d82d, 0.35).fillCircle(9 * s, 9 * s, 9 * s);
-  g.fillStyle(0xc0eb75).fillCircle(9 * s, 9 * s, 5.5 * s);
-  g.fillStyle(0xffffff, 0.8).fillCircle(7 * s, 7 * s, 2 * s);
-  gen('acid', 18, 18);
+  g.fillStyle(0xd8f5a2, 0.25).fillCircle(14 * s, 14 * s, 14 * s);
+  g.fillStyle(0x94d82d, 0.45).fillCircle(14 * s, 14 * s, 11 * s);
+  g.fillStyle(0x1b3a0a).fillCircle(14 * s, 14 * s, 8 * s);
+  g.fillStyle(0xd8f5a2).fillCircle(14 * s, 14 * s, 6.5 * s);
+  g.fillStyle(0xffffff, 0.9).fillCircle(11.5 * s, 11.5 * s, 2.5 * s);
+  gen('acid', 28, 28);
 
   // Ящик (размер тайла 48)
   g.fillStyle(0x000000, 0.35).fillRect(4 * s, 8 * s, 44 * s, 42 * s);
@@ -117,6 +121,17 @@ export function makeTextures(scene: Phaser.Scene) {
   g.lineStyle(5 * s, 0x7a4f28).lineBetween(8 * s, 8 * s, 40 * s, 40 * s);
   g.lineStyle(2 * s, 0x3b2412).strokeRect(3 * s, 3 * s, 42 * s, 42 * s);
   gen('crate', 50, 50);
+
+  // Двери (48 по ширине тайла)
+  g.fillStyle(0x000000, 0.35).fillRect(0, 9 * s, 48 * s, 9 * s);
+  g.fillStyle(0x8a5a2b).fillRect(0, 4 * s, 48 * s, 12 * s);
+  g.fillStyle(0x6b4320).fillRect(0, 4 * s, 48 * s, 3 * s).fillRect(0, 13 * s, 48 * s, 3 * s);
+  g.fillStyle(0xffd43b).fillCircle(38 * s, 10 * s, 2 * s);
+  g.lineStyle(1.5 * s, 0x3b2412).strokeRect(0.5 * s, 4 * s, 47 * s, 12 * s);
+  gen('door', 48, 20);
+  g.fillStyle(0x6b4320, 0.9).fillRect(0, 4 * s, 7 * s, 12 * s).fillRect(41 * s, 4 * s, 7 * s, 12 * s);
+  g.lineStyle(1 * s, 0x3b2412).strokeRect(0.5 * s, 4 * s, 6 * s, 12 * s).strokeRect(41.5 * s, 4 * s, 6 * s, 12 * s);
+  gen('door_open', 48, 20);
 
   // Аптечка-сердце
   g.fillStyle(0x000000, 0.3).fillEllipse(11 * s, 21 * s, 18 * s, 5 * s);
