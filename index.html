@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#151a14" />
+  <title>Swipe Survivors</title>
+</head>
+<body>
+  <div id="game"></div>
+
+  <div id="hud" class="hidden">
+    <div class="bars">
+      <div class="bar hp"><div class="fill" id="hp-fill"></div><span id="hp-text"></span></div>
+      <div class="bar energy" id="energy-bar"><div class="fill" id="energy-fill"></div></div>
+    </div>
+    <div class="stats">
+      <span id="time">0:00</span>
+      <span>💀 <b id="kills">0</b></span>
+      <span>Ур. <b id="level">1</b></span>
+    </div>
+    <div class="items" id="items"></div>
+    <div class="bar xp"><div class="fill" id="xp-fill"></div></div>
+  </div>
+
+  <div id="toast"></div>
+
+  <div id="levelup" class="overlay hidden">
+    <h2>Новый уровень!</h2>
+    <div class="cards" id="cards"></div>
+  </div>
+
+  <div id="start" class="overlay">
+    <h1>Swipe Survivors</h1>
+    <ul class="howto">
+      <li><b>Движение:</b> палец на левой части экрана (джойстик) или WASD</li>
+      <li><b>Удар:</b> быстрый свайп в любом месте справа (или мышью) режет зомби</li>
+      <li><b>Печать:</b> обведи толпу замкнутым кругом — все внутри получат мощный урон</li>
+      <li>Свайпы тратят энергию. Медленный свайп не режет.</li>
+      <li>Собирай опыт и выбирай апгрейды. Из толстяков выпадают сундуки с тринкетами.</li>
+    </ul>
+    <button id="start-btn">Играть</button>
+  </div>
+
+  <div id="gameover" class="overlay hidden">
+    <h2>Вас съели</h2>
+    <p id="go-stats"></p>
+    <button id="restart-btn">Ещё раз</button>
+  </div>
+
+  <script type="module" src="./src/main.ts"></script>
+</body>
+</html>

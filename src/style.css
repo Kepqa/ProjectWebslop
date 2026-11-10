@@ -1,0 +1,60 @@
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; height: 100%; overflow: hidden; background: #151a14; color: #eee;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  touch-action: none; overscroll-behavior: none;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+#game { position: fixed; inset: 0; }
+.hidden { display: none !important; }
+
+#hud {
+  position: fixed; left: 0; right: 0; top: 0; pointer-events: none;
+  padding: calc(env(safe-area-inset-top) + 8px) 12px 0;
+  display: grid; grid-template-columns: minmax(0, 320px) 1fr; gap: 6px 14px; align-items: start;
+}
+.bars { display: flex; flex-direction: column; gap: 5px; }
+.bar { position: relative; height: 16px; background: #0009; border: 2px solid #000; border-radius: 6px; overflow: hidden; }
+.bar .fill { height: 100%; width: 100%; transition: width .08s linear; }
+.bar span { position: absolute; inset: 0; font-size: 11px; line-height: 12px; text-align: center; font-weight: 700; text-shadow: 0 1px 2px #000; }
+.hp .fill { background: linear-gradient(#ff6b6b, #c92a2a); }
+.energy { height: 10px; }
+.energy .fill { background: linear-gradient(#a5f3fc, #22b8cf); }
+.energy.empty { animation: blink .25s 2; }
+@keyframes blink { 50% { border-color: #ff6b6b; } }
+.xp { grid-column: 1 / -1; height: 8px; }
+.xp .fill { background: linear-gradient(#b197fc, #7048e8); }
+.stats { display: flex; gap: 14px; justify-content: flex-end; font-size: 16px; text-shadow: 0 1px 3px #000; }
+.items { grid-column: 1 / -1; display: flex; gap: 4px; flex-wrap: wrap; font-size: 18px; min-height: 0; }
+.items span { background: #0007; border-radius: 6px; padding: 1px 5px; font-size: 15px; }
+.items sub { font-size: 10px; color: #ffd43b; }
+
+#toast {
+  position: fixed; top: 22%; left: 0; right: 0; text-align: center; pointer-events: none;
+  font-size: 30px; font-weight: 900; color: #ffd43b; text-shadow: 0 2px 6px #000; opacity: 0; transition: opacity .3s;
+}
+#toast.show { opacity: 1; }
+
+.overlay {
+  position: fixed; inset: 0; background: #0b0f0ad9; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px; padding: 24px; text-align: center;
+}
+.overlay h1 { font-size: clamp(32px, 7vw, 60px); margin: 0; color: #a9e34b; letter-spacing: 1px; }
+.overlay h2 { font-size: 32px; margin: 0; color: #ffd43b; }
+.howto { text-align: left; max-width: 520px; line-height: 1.5; font-size: 16px; padding-left: 20px; margin: 0; }
+button {
+  font: inherit; font-size: 22px; font-weight: 800; padding: 14px 40px; border-radius: 14px;
+  border: 3px solid #000; background: #a9e34b; color: #111; cursor: pointer; touch-action: manipulation;
+}
+.cards { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; max-width: 900px; }
+.card {
+  width: 230px; min-height: 170px; padding: 14px; border-radius: 14px; border: 3px solid #000;
+  background: #2b3328; color: #eee; text-align: left; font-size: 15px; font-weight: 400;
+  display: flex; flex-direction: column; gap: 6px; transition: transform .1s;
+}
+.card:active { transform: scale(.97); }
+.card.trinket { background: #3a2f1c; }
+.card .icon { font-size: 34px; }
+.card .name { font-size: 18px; font-weight: 800; }
+.card .lvl { font-size: 12px; color: #ffd43b; text-transform: uppercase; }
+@media (max-width: 760px) { .card { width: 100%; min-height: 0; } }
