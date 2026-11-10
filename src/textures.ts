@@ -118,6 +118,32 @@ export function makeTextures(scene: Phaser.Scene) {
   g.lineStyle(2 * s, 0x3b2412).strokeRect(3 * s, 3 * s, 42 * s, 42 * s);
   gen('crate', 50, 50);
 
+  // Аптечка-сердце
+  g.fillStyle(0x000000, 0.3).fillEllipse(11 * s, 21 * s, 18 * s, 5 * s);
+  g.fillStyle(0xfa5252).fillCircle(7 * s, 8 * s, 5.5 * s).fillCircle(15 * s, 8 * s, 5.5 * s)
+    .fillTriangle(1.8 * s, 10 * s, 20.2 * s, 10 * s, 11 * s, 19 * s);
+  g.fillStyle(0xffffff, 0.85).fillRect(9.5 * s, 5 * s, 3 * s, 9 * s).fillRect(6.5 * s, 8 * s, 9 * s, 3 * s);
+  gen('medkit', 22, 23);
+
+  // Копьё (смотрит вправо)
+  g.fillStyle(0x66d9e8, 0.35).fillEllipse(22 * s, 6 * s, 44 * s, 10 * s);
+  g.fillStyle(0xadb5bd).fillRect(2 * s, 5 * s, 30 * s, 2.5 * s);
+  g.fillStyle(0xffffff).fillTriangle(30 * s, 1.5 * s, 30 * s, 10.5 * s, 44 * s, 6 * s);
+  g.fillStyle(0x66d9e8).fillTriangle(32 * s, 3.5 * s, 32 * s, 8.5 * s, 40 * s, 6 * s);
+  gen('spear', 44, 12);
+
+  // Осколок
+  g.fillStyle(0xe7f5ff).fillPoints([{ x: 0, y: 4 * s }, { x: 10 * s, y: 0 }, { x: 16 * s, y: 4 * s }, { x: 10 * s, y: 8 * s }], true);
+  g.fillStyle(0x99e9f2).fillTriangle(10 * s, 1.5 * s, 15 * s, 4 * s, 10 * s, 6.5 * s);
+  gen('shard', 16, 8);
+
+  // Звезда-мина
+  const star: { x: number; y: number }[] = [];
+  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? 4.5 : 10; star.push({ x: (11 + Math.cos(a) * rr) * s, y: (11 + Math.sin(a) * rr) * s }); }
+  g.fillStyle(0xffd43b).fillPoints(star, true);
+  g.lineStyle(1.5 * s, 0xe67700).strokePoints(star, true);
+  gen('mine', 22, 22);
+
   g.destroy();
 }
 

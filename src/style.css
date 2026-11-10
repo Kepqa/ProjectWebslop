@@ -180,3 +180,43 @@ button:active { transform: translateY(2px); box-shadow: 0 2px 0 #000; }
 #dev-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 #dev-buttons button { font-size: 12px; font-weight: 700; padding: 6px 4px; border-width: 2px; border-radius: 8px; box-shadow: none; background: #343a40; color: #fff; }
 #dev-buttons button.on { background: #e8590c; }
+
+/* ---------- Карточки улучшений ---------- */
+.card { position: relative; border: 3px solid #000; box-shadow: 0 6px 0 #000, inset 0 0 0 2px #ffffff10; }
+.card.swipe { background: linear-gradient(170deg, #2f3a2b, #232b21); }
+.card.shape { background: linear-gradient(170deg, #1f3550, #172536); }
+.card.shape .tag { background: #1971c2; }
+.card.trinket { background: linear-gradient(170deg, #4a3a1f, #2e2414); }
+.card.trinket .tag { background: #e67700; }
+.card .ctop { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.card .tag { font-size: 10px; font-weight: 800; text-transform: uppercase; background: #2b8a3e; padding: 2px 6px; border-radius: 6px; }
+.card .new { font-size: 10px; font-weight: 800; color: #111; background: #ffd43b; padding: 2px 6px; border-radius: 6px; }
+.card .up { font-size: 11px; font-weight: 800; color: #ffd43b; }
+.card .pips { display: flex; gap: 3px; }
+.card .pips i { width: 14px; height: 6px; border-radius: 3px; background: #ffffff22; }
+.card .pips i.on { background: #ffd43b; }
+.card .pips i.next { background: #ffd43b; animation: pip 0.8s ease-in-out infinite alternate; }
+@keyframes pip { from { opacity: .35; } to { opacity: 1; } }
+.card .desc { opacity: .95; }
+.card .synline { font-size: 11px; opacity: .55; border-top: 1px dashed #ffffff22; padding-top: 4px; }
+.card .synline.ready { opacity: 1; color: #ffd43b; }
+.card:hover:not(:disabled) { transform: translateY(-3px); }
+.card.picked { transform: scale(1.06); box-shadow: 0 0 0 4px #ffd43b, 0 6px 0 #000; }
+.cards.closing .card:not(.picked) { opacity: 0; transform: translateY(20px); transition: all .2s; }
+.lu-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.lu-actions button:disabled { opacity: .4; }
+#build { font-size: 13px; display: flex; flex-direction: column; gap: 4px; align-items: center; opacity: .9; }
+#build span { background: #0006; border-radius: 6px; padding: 1px 4px; margin: 0 1px; }
+#build sub { font-size: 9px; color: #ffd43b; }
+#build .bsyn { color: #ffd43b; }
+.items .sep { width: 2px; background: #ffffff30; margin: 2px 3px; border-radius: 1px; }
+.items .syn { border: 1px solid #ffd43b; background: #ffd43b22; }
+@media (max-width: 600px) and (orientation: portrait) {
+  .card .ctop { grid-column: 1 / -1; }
+  .card { display: flex; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .card .synline { display: none; }
+  #build { font-size: 11px; }
+  .lu-actions button { padding: 4px 10px; font-size: 13px; }
+}

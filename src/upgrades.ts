@@ -1,129 +1,165 @@
 export type Levels = Record<string, number>;
+export type Kind = 'swipe' | 'shape' | 'trinket';
 
 export interface UpgradeDef {
   id: string;
-  kind: 'swipe' | 'trinket';
+  kind: Kind;
   icon: string;
   name: string;
   max: number;
   desc: (nextLevel: number) => string;
 }
 
+/** Слоты: свайп + формы свайпа делят 6 мест, тринкеты — 4. Заполнил — дальше только прокачка взятого. */
+export const SLOTS = { blade: 6, trinket: 4 } as const;
+export const slotOf = (k: Kind) => (k === 'trinket' ? 'trinket' : 'blade');
+
+export interface SynergyDef { id: string; icon: string; name: string; a: string; b: string; desc: string }
+
+/** Синергия включается, когда оба предмета прокачаны минимум до 2 уровня. */
+export const SYN_LEVEL = 2;
+export const SYNERGIES: SynergyDef[] = [
+  { id: 'firewave', icon: '🌋', name: 'Огненная волна', a: 'wave', b: 'burn', desc: 'Волна оставляет горящий след' },
+  { id: 'thunderspear', icon: '🌩️', name: 'Громовое копьё', a: 'spear', b: 'chain', desc: 'Каждое попадание копья бьёт молнией' },
+  { id: 'twinboom', icon: '🪃', name: 'Парные бумеранги', a: 'boomerang', b: 'mirror', desc: 'Бумеранг летит ещё и в зеркальную сторону' },
+  { id: 'cluster', icon: '🎆', name: 'Кассетные мины', a: 'mines', b: 'combo', desc: 'Мина разлетается тремя малыми взрывами' },
+  { id: 'tornado', icon: '🌪️', name: 'Смерч', a: 'vortex', b: 'shove', desc: 'Вихрь живёт дольше и в конце разбрасывает зомби (в пропасть тоже)' },
+  { id: 'iceshards', icon: '🧊', name: 'Ледяные осколки', a: 'shards', b: 'frost', desc: 'Осколки пронзают насквозь и почти замораживают' },
+  { id: 'breach', icon: '🔨', name: 'Пробой', a: 'charge', b: 'momentum', desc: 'Заряженный свайп ×1.5 урона сверху и сразу ломает щиты' },
+  { id: 'thirst', icon: '🍷', name: 'Жажда', a: 'bloodblade', b: 'rend', desc: 'Убийства кровотечением лечат 1 HP' },
+  { id: 'doublerune', icon: '♾️', name: 'Двойная печать', a: 'rune', b: 'echo', desc: 'Печать повторяется через 0.5с' },
+  { id: 'blackhole', icon: '🕳️', name: 'Чёрная дыра', a: 'censer', b: 'magnet', desc: 'Аура кадила затягивает зомби к вам' },
+];
+
+export function activeSynergies(l: Levels) {
+  return SYNERGIES.filter((s) => (l[s.a] ?? 0) >= SYN_LEVEL && (l[s.b] ?? 0) >= SYN_LEVEL);
+}
+export function synergiesOf(id: string) { return SYNERGIES.filter((s) => s.a === id || s.b === id); }
+
 export interface Stats {
-  bladeDamage: number;
-  bladeWidth: number;
-  energyMax: number;
-  energyRegen: number;
-  costMul: number;
-  burnDur: number;
-  burnDps: number;
-  chainChance: number;
-  chainJumps: number;
-  chainDmg: number;
-  comboThreshold: number;
-  comboDmg: number;
-  comboRadius: number;
-  echoMul: number;
-  frostDur: number;
-  frostSlow: number;
-  runeMult: number;
-  runeCd: number;
-  auraRadius: number;
-  auraDps: number;
-  bones: number;
-  boneDmg: number;
-  pickupRadius: number;
-  healEvery: number;
-  xpMul: number;
-  speedMul: number;
-  maxHp: number;
-  momentum: number;
-  bleedDps: number;
-  knockMul: number;
-  wallSlam: number;
-  crossDmg: number;
-  crossR: number;
-  boomDmg: number;
-  boomCd: number;
-  bloodEnergy: number;
-  reflectDmg: number;
-  phoenix: number;
-  grenadeCd: number;
-  grenadeDmg: number;
-  grenadeR: number;
-  bell: number;
+  bladeDamage: number; bladeWidth: number; energyMax: number; energyRegen: number; costMul: number;
+  burnDur: number; burnDps: number; chainChance: number; chainJumps: number; chainDmg: number;
+  comboThreshold: number; comboDmg: number; comboRadius: number; echoMul: number; frostDur: number; frostSlow: number;
+  runeMult: number; runeCd: number; auraRadius: number; auraDps: number; bones: number; boneDmg: number;
+  pickupRadius: number; healEvery: number; xpMul: number; speedMul: number; maxHp: number;
+  momentum: number; bleedDps: number; knockMul: number; wallSlam: number; crossDmg: number; crossR: number;
+  boomDmg: number; boomCd: number; bloodEnergy: number; reflectDmg: number; phoenix: number;
+  grenadeCd: number; grenadeDmg: number; grenadeR: number; bell: number;
+  // формы свайпа
+  spearDmg: number; spearCount: number;
+  waveDmg: number; waveScale: number;
+  mirrorMul: number;
+  shardCount: number; shardDmg: number;
+  mineDmg: number; mineR: number; mineEvery: number;
+  vortexR: number; vortexDps: number; vortexDur: number;
+  chargeMul: number;
+  syn: Record<string, boolean>;
 }
 
+const K = { s: 'swipe', f: 'shape', t: 'trinket' } as const;
+
 export const UPGRADES: UpgradeDef[] = [
-  // --- Апгрейды свайпа ---
-  { id: 'sharp', kind: 'swipe', icon: '🗡️', name: 'Заточка', max: 6,
-    desc: () => '+1.5 к урону клинка-свайпа' },
-  { id: 'wide', kind: 'swipe', icon: '〰️', name: 'Широкий взмах', max: 5,
-    desc: () => 'След свайпа шире на 7px — проще задевать толпу' },
-  { id: 'breath', kind: 'swipe', icon: '🫁', name: 'Второе дыхание', max: 5,
-    desc: () => '+30 к макс. энергии и +10 к восстановлению в секунду' },
-  { id: 'efficient', kind: 'swipe', icon: '🪶', name: 'Лёгкая рука', max: 5,
-    desc: () => 'Свайпы и печати тратят на 15% меньше энергии' },
-  { id: 'burn', kind: 'swipe', icon: '🔥', name: 'Огненный след', max: 5,
-    desc: (l) => l === 1 ? 'След свайпа горит и жжёт зомби, которые по нему идут'
-      : 'След горит дольше и жжёт сильнее' },
-  { id: 'chain', kind: 'swipe', icon: '⚡', name: 'Цепная молния', max: 4,
-    desc: (l) => l === 1 ? 'Убийство свайпом с шансом 30% бьёт молнией соседа'
-      : '+30% к шансу и +1 прыжок молнии' },
-  { id: 'combo', kind: 'swipe', icon: '💥', name: 'Комбо-взрыв', max: 4,
-    desc: (l) => l === 1 ? 'Каждые 6 убийств одним свайпом — взрыв'
-      : 'Взрыв нужен на 1 убийство раньше, мощнее и шире' },
-  { id: 'echo', kind: 'swipe', icon: '👻', name: 'Эхо-разрез', max: 4,
-    desc: (l) => l === 1 ? 'Через 0.3с призрачный клинок повторяет ваш свайп (55% урона)'
-      : '+20% урона эха' },
-  { id: 'frost', kind: 'swipe', icon: '❄️', name: 'Ледяная кромка', max: 4,
-    desc: () => 'Задетые зомби замедляются сильнее и дольше' },
-  { id: 'rune', kind: 'swipe', icon: '🔮', name: 'Печать круга', max: 4,
-    desc: (l) => l === 1 ? 'Открывает печать: обведи зомби замкнутым кругом — урон всем внутри (перезарядка 3с)'
-      : '+50% урона печати, перезарядка на 0.4с короче' },
-  { id: 'momentum', kind: 'swipe', icon: '💨', name: 'Инерция', max: 4,
-    desc: () => 'Чем резче свайп, тем больнее: до +30% урона за уровень у самых быстрых взмахов' },
-  { id: 'rend', kind: 'swipe', icon: '🩸', name: 'Рваные раны', max: 4,
+  // --- Свойства клинка ---
+  { id: 'sharp', kind: K.s, icon: '🗡️', name: 'Заточка', max: 6, desc: () => '+1.5 к урону клинка-свайпа' },
+  { id: 'wide', kind: K.s, icon: '〰️', name: 'Широкий взмах', max: 5, desc: () => 'След свайпа шире на 7px — проще задевать толпу' },
+  { id: 'breath', kind: K.s, icon: '🫁', name: 'Второе дыхание', max: 5, desc: () => '+30 к макс. энергии и +10 к восстановлению в секунду' },
+  { id: 'efficient', kind: K.s, icon: '🪶', name: 'Лёгкая рука', max: 5, desc: () => 'Свайпы и печати тратят на 15% меньше энергии' },
+  { id: 'burn', kind: K.s, icon: '🔥', name: 'Огненный след', max: 5,
+    desc: (l) => l === 1 ? 'След свайпа горит и жжёт зомби, которые по нему идут' : 'След горит дольше и жжёт сильнее' },
+  { id: 'chain', kind: K.s, icon: '⚡', name: 'Цепная молния', max: 4,
+    desc: (l) => l === 1 ? 'Убийство свайпом с шансом 30% бьёт молнией соседа' : '+30% к шансу и +1 прыжок молнии' },
+  { id: 'combo', kind: K.s, icon: '💥', name: 'Комбо-взрыв', max: 4,
+    desc: (l) => l === 1 ? 'Каждые 6 убийств одним свайпом — взрыв' : 'Взрыв нужен на 1 убийство раньше, мощнее и шире' },
+  { id: 'echo', kind: K.s, icon: '👻', name: 'Эхо-разрез', max: 4,
+    desc: (l) => l === 1 ? 'Через 0.3с призрачный клинок повторяет ваш свайп (55% урона)' : '+20% урона эха' },
+  { id: 'frost', kind: K.s, icon: '❄️', name: 'Ледяная кромка', max: 4, desc: () => 'Задетые зомби замедляются сильнее и дольше' },
+  { id: 'rune', kind: K.s, icon: '🔮', name: 'Печать круга', max: 4,
+    desc: (l) => l === 1 ? 'Открывает печать: обведи зомби замкнутым кругом — урон всем внутри (перезарядка 3с)' : '+50% урона печати, перезарядка на 0.4с короче' },
+  { id: 'momentum', kind: K.s, icon: '💨', name: 'Инерция', max: 4, desc: () => 'Чем резче свайп, тем больнее: до +30% урона за уровень' },
+  { id: 'rend', kind: K.s, icon: '🩸', name: 'Рваные раны', max: 4,
     desc: (l) => l === 1 ? 'Задетые зомби кровоточат 3с (урон со временем)' : 'Кровотечение сильнее' },
-  { id: 'shove', kind: 'swipe', icon: '🥊', name: 'Толчок', max: 4,
-    desc: (l) => l === 1 ? 'Свайп отбрасывает сильнее; зомби, врезавшиеся в стену, получают урон. В пропасть — летят насовсем'
-      : 'Сильнее отброс и удар о стену' },
-  { id: 'cross', kind: 'swipe', icon: '✖️', name: 'Крест-накрест', max: 4,
-    desc: (l) => l === 1 ? 'Пересеки свой свежий след другим свайпом — в точке пересечения взрыв'
-      : 'Взрыв пересечения мощнее и шире' },
-  { id: 'boomerang', kind: 'swipe', icon: '🪃', name: 'Бумеранг', max: 4,
-    desc: (l) => l === 1 ? 'Длинный свайп запускает вращающийся клинок, который летит вперёд и возвращается'
-      : 'Бумеранг бьёт сильнее и чаще' },
-  { id: 'bloodblade', kind: 'swipe', icon: '🧛', name: 'Кровопийца', max: 3,
-    desc: () => 'Каждое убийство свайпом возвращает 1.5 энергии' },
-  { id: 'reflect', kind: 'swipe', icon: '🪞', name: 'Зеркальный клинок', max: 3,
+  { id: 'shove', kind: K.s, icon: '🥊', name: 'Толчок', max: 4,
+    desc: (l) => l === 1 ? 'Свайп отбрасывает сильнее; удар о стену ранит. В пропасть — насовсем' : 'Сильнее отброс и удар о стену' },
+  { id: 'cross', kind: K.s, icon: '✖️', name: 'Крест-накрест', max: 4,
+    desc: (l) => l === 1 ? 'Пересеки свой свежий след другим свайпом — в точке пересечения взрыв' : 'Взрыв пересечения мощнее и шире' },
+  { id: 'boomerang', kind: K.s, icon: '🪃', name: 'Бумеранг', max: 4,
+    desc: (l) => l === 1 ? 'Длинный свайп запускает вращающийся клинок туда и обратно' : 'Бумеранг бьёт сильнее и чаще' },
+  { id: 'bloodblade', kind: K.s, icon: '🧛', name: 'Кровопийца', max: 3, desc: () => 'Каждое убийство свайпом возвращает 1.5 энергии' },
+  { id: 'reflect', kind: K.s, icon: '🪞', name: 'Зеркальный клинок', max: 3,
     desc: (l) => l === 1 ? 'Разрубленные плевки и сферы летят обратно во врагов' : 'Отражённые снаряды бьют сильнее' },
 
+  // --- Формы свайпа ---
+  { id: 'spear', kind: K.f, icon: '🔱', name: 'Копьё', max: 4,
+    desc: (l) => l === 1 ? 'В конце свайпа по его направлению летит копьё, пронзающее всех на пути' : l === 3 ? 'Два копья веером, больше урона' : 'Копьё бьёт сильнее' },
+  { id: 'wave', kind: K.f, icon: '🌊', name: 'Волна', max: 4,
+    desc: (l) => l === 1 ? 'Нарисованный след расходится волной своей же формы' : 'Волна шире и сильнее' },
+  { id: 'mirror', kind: K.f, icon: '🦋', name: 'Двойник', max: 4,
+    desc: (l) => l === 1 ? 'Свайп отражается зеркально через героя (55% урона)' : '+15% урона отражения' },
+  { id: 'shards', kind: K.f, icon: '✴️', name: 'Веер осколков', max: 4,
+    desc: (l) => `Конец свайпа выстреливает веер из ${2 + l} осколков` },
+  { id: 'mines', kind: K.f, icon: '⭐', name: 'Звёздные мины', max: 4,
+    desc: (l) => l === 1 ? 'Длинный след роняет звёзды-мины, они взрываются через 0.6с' : 'Мины чаще и мощнее' },
+  { id: 'vortex', kind: K.f, icon: '🌀', name: 'Вихрь', max: 4,
+    desc: (l) => l === 1 ? 'Резкий разворот свайпа (V или Z) создаёт вихрь, затягивающий зомби' : 'Вихрь шире и злее' },
+  { id: 'charge', kind: K.f, icon: '🎯', name: 'Заряд', max: 4,
+    desc: (l) => l === 1 ? 'Задержи палец на месте 0.5с, затем режь: свайп ×2 урона и шире' : '+0.4 к множителю заряда' },
+
   // --- Тринкеты ---
-  { id: 'censer', kind: 'trinket', icon: '🏮', name: 'Гнилое кадило', max: 5,
-    desc: (l) => l === 1 ? 'Аура вокруг вас жжёт ближайших зомби' : 'Аура шире и сильнее' },
-  { id: 'bones', kind: 'trinket', icon: '🦴', name: 'Хоровод костей', max: 5,
-    desc: (l) => l === 1 ? 'Вокруг вас кружит кость и бьёт зомби' : '+1 кость, больше урона' },
-  { id: 'magnet', kind: 'trinket', icon: '🧲', name: 'Ржавый магнит', max: 4,
-    desc: () => 'Опыт притягивается с расстояния на 50% больше' },
-  { id: 'tooth', kind: 'trinket', icon: '🦷', name: 'Клык вампира', max: 4,
-    desc: (l) => `Лечит 4 HP за каждые ${Math.max(10, 30 - 5 * l)} убийств` },
-  { id: 'coin', kind: 'trinket', icon: '🪙', name: 'Счастливая монета', max: 4,
-    desc: () => '+25% получаемого опыта' },
-  { id: 'boots', kind: 'trinket', icon: '👟', name: 'Кеды беглеца', max: 4,
-    desc: () => '+12% к скорости бега' },
-  { id: 'heart', kind: 'trinket', icon: '❤️', name: 'Запасное сердце', max: 4,
-    desc: () => '+25 к макс. HP и столько же лечения' },
-  { id: 'phoenix', kind: 'trinket', icon: '🪶', name: 'Перо феникса', max: 1,
-    desc: () => 'Один раз за забег воскрешает с 50% HP и взрывом' },
-  { id: 'grenade', kind: 'trinket', icon: '💣', name: 'Ржавая граната', max: 4,
-    desc: (l) => l === 1 ? 'Раз в 5с бросает гранату в ближайшую толпу' : 'Гранаты чаще и мощнее' },
-  { id: 'bell', kind: 'trinket', icon: '🔔', name: 'Колокол паники', max: 3,
-    desc: () => 'Когда HP ниже 35% и вас бьют — звон отбрасывает и ранит всех рядом (раз в 25с)' },
+  { id: 'censer', kind: K.t, icon: '🏮', name: 'Гнилое кадило', max: 5, desc: (l) => l === 1 ? 'Аура вокруг вас жжёт ближайших зомби' : 'Аура шире и сильнее' },
+  { id: 'bones', kind: K.t, icon: '🦴', name: 'Хоровод костей', max: 5, desc: (l) => l === 1 ? 'Вокруг вас кружит кость и бьёт зомби' : '+1 кость, больше урона' },
+  { id: 'magnet', kind: K.t, icon: '🧲', name: 'Ржавый магнит', max: 4, desc: () => 'Опыт и аптечки притягиваются на 50% дальше' },
+  { id: 'tooth', kind: K.t, icon: '🦷', name: 'Клык вампира', max: 4, desc: (l) => `Лечит 4 HP за каждые ${Math.max(10, 30 - 5 * l)} убийств` },
+  { id: 'coin', kind: K.t, icon: '🪙', name: 'Счастливая монета', max: 4, desc: () => '+25% опыта и чаще аптечки в ящиках' },
+  { id: 'boots', kind: K.t, icon: '👟', name: 'Кеды беглеца', max: 4, desc: () => '+12% к скорости бега' },
+  { id: 'heart', kind: K.t, icon: '❤️', name: 'Запасное сердце', max: 4, desc: () => '+25 к макс. HP и столько же лечения' },
+  { id: 'phoenix', kind: K.t, icon: '🪶', name: 'Перо феникса', max: 1, desc: () => 'Один раз за забег воскрешает с 50% HP и взрывом' },
+  { id: 'grenade', kind: K.t, icon: '💣', name: 'Ржавая граната', max: 4, desc: (l) => l === 1 ? 'Раз в 5с бросает гранату в ближайшую толпу' : 'Гранаты чаще и мощнее' },
+  { id: 'bell', kind: K.t, icon: '🔔', name: 'Колокол паники', max: 3, desc: () => 'HP ниже 35% и вас бьют — звон отбрасывает и ранит всех рядом (раз в 25с)' },
 ];
+
+export const byId = (id: string) => UPGRADES.find((u) => u.id === id);
+
+export function slotsUsed(l: Levels) {
+  const used = { blade: 0, trinket: 0 };
+  for (const u of UPGRADES) if ((l[u.id] ?? 0) > 0) used[slotOf(u.kind)]++;
+  return used;
+}
+
+/** Что можно предложить: не на максимуме и (уже взято или есть свободный слот). */
+export function offerPool(l: Levels, onlyKind?: Kind) {
+  const used = slotsUsed(l);
+  return UPGRADES.filter((u) => {
+    if (onlyKind && u.kind !== onlyKind) return false;
+    const lv = l[u.id] ?? 0;
+    if (lv >= u.max) return false;
+    return lv > 0 || used[slotOf(u.kind)] < SLOTS[slotOf(u.kind)];
+  });
+}
+
+/** Три карточки: взвешенно, с приоритетом того, что даст синергию. */
+export function rollChoices(l: Levels, n = 3): UpgradeDef[] {
+  const pool = offerPool(l);
+  const out: UpgradeDef[] = [];
+  while (out.length < n && pool.length) {
+    const w = pool.map((u) => {
+      let k = u.kind === 'trinket' ? 1 : u.id === 'rune' ? 1.2 : 2.4;
+      if ((l[u.id] ?? 0) > 0) k *= 1.6;
+      // предмет, напарник по синергии которого уже взят, выпадает чаще
+      if (synergiesOf(u.id).some((s) => (l[s.a === u.id ? s.b : s.a] ?? 0) > 0)) k *= 1.5;
+      return k;
+    });
+    let r = Math.random() * w.reduce((a, b) => a + b, 0);
+    let i = 0;
+    while ((r -= w[i]) > 0) i++;
+    out.push(pool.splice(i, 1)[0]);
+  }
+  return out;
+}
 
 export function computeStats(l: Levels): Stats {
   const v = (id: string) => l[id] ?? 0;
+  const syn: Record<string, boolean> = {};
+  for (const s of activeSynergies(l)) syn[s.id] = true;
   return {
     bladeDamage: 4 + 1.5 * v('sharp'),
     bladeWidth: 18 + 7 * v('wide'),
@@ -167,5 +203,20 @@ export function computeStats(l: Levels): Stats {
     grenadeDmg: 8 + 5 * v('grenade'),
     grenadeR: 80 + 12 * v('grenade'),
     bell: v('bell'),
+    spearDmg: v('spear') ? 5 + 4 * v('spear') : 0,
+    spearCount: v('spear') >= 3 ? 2 : 1,
+    waveDmg: v('wave') ? 2 + 2 * v('wave') : 0,
+    waveScale: 2 + 0.4 * v('wave'),
+    mirrorMul: v('mirror') ? 0.4 + 0.15 * v('mirror') : 0,
+    shardCount: v('shards') ? 2 + v('shards') : 0,
+    shardDmg: 3 + 2 * v('shards'),
+    mineDmg: v('mines') ? 5 + 4 * v('mines') : 0,
+    mineR: 60 + 10 * v('mines'),
+    mineEvery: 260 - 30 * v('mines'),
+    vortexR: v('vortex') ? 90 + 18 * v('vortex') : 0,
+    vortexDps: 3 * v('vortex'),
+    vortexDur: 1.1 + 0.2 * v('vortex') + (syn.tornado ? 1 : 0),
+    chargeMul: v('charge') ? 1.6 + 0.4 * v('charge') : 0,
+    syn,
   };
 }

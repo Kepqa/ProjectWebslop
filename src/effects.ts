@@ -5,10 +5,12 @@ import { S, ZLOOK, type ZType } from './textures';
 export type Fx =
   | { kind: 'ring'; x: number; y: number; r: number; color: number; born: number; life: number; width?: number }
   | { kind: 'bolt'; pts: number[]; born: number; life: number }
-  | { kind: 'poly'; pts: { x: number; y: number }[]; born: number; life: number; color: number };
+  | { kind: 'poly'; pts: { x: number; y: number }[]; born: number; life: number; color: number }
+  | { kind: 'slash'; x1: number; y1: number; x2: number; y2: number; born: number; life: number }
+  | { kind: 'wave'; cx: number; cy: number; pts: number[]; s0: number; s1: number; born: number; life: number; fire: boolean };
 
 type Emitter = Phaser.GameObjects.Particles.ParticleEmitter;
-export const EMITTERS = ['gore', 'spark', 'dust', 'wood', 'acid', 'magic'] as const;
+export const EMITTERS = ['gore', 'spark', 'dust', 'wood', 'acid', 'magic', 'chunk', 'heal'] as const;
 export type EmitterName = typeof EMITTERS[number];
 
 export class Effects {
@@ -26,6 +28,9 @@ export class Effects {
       wood: mk({ speed: { min: 90, max: 300 }, lifespan: { min: 350, max: 650 }, rotate: { min: 0, max: 360 }, scale: { start: 0.7, end: 0.3 }, tint: [0x9c6b3a, 0x7a4f28, 0xc08a50] }, 'chip'),
       acid: mk({ speed: { min: 40, max: 200 }, lifespan: { min: 250, max: 500 }, scale: { start: 0.5, end: 0 }, tint: [0xc0eb75, 0x94d82d, 0x5c940d] }),
       magic: mk({ speed: { min: 150, max: 420 }, lifespan: { min: 400, max: 800 }, scale: { start: 0.6, end: 0 }, tint: [0xb197fc, 0xffd43b, 0xffffff], blendMode: 'ADD' }),
+      // куски тела: цвет задаётся перед выбросом
+      chunk: mk({ speed: { min: 120, max: 360 }, lifespan: { min: 350, max: 700 }, rotate: { min: 0, max: 360 }, scale: { start: 1.3, end: 0.5 }, alpha: { start: 1, end: 0 } }, 'chip'),
+      heal: mk({ speed: { min: 40, max: 140 }, lifespan: { min: 500, max: 900 }, scale: { start: 0.6, end: 0 }, tint: [0x69db7c, 0xb2f2bb, 0xffffff], gravityY: -120 }),
     };
   }
 
@@ -36,6 +41,10 @@ export class Effects {
   }
   bolt(now: number, pts: number[]) { this.fx.push({ kind: 'bolt', pts, born: now, life: 0.2 }); }
   poly(now: number, pts: { x: number; y: number }[], color: number) { this.fx.push({ kind: 'poly', pts, born: now, life: 0.5, color }); }
+  /** Волна формы свайпа: pts — точки относительно центра, масштаб растёт s0→s1. */
+  wave(now: number, cx: number, cy: number, pts: number[], s1: number, life: number, fire: boolean) {
+    this.fx.push({ kind: 'wave', cx, cy, pts, s0: 1, s1, born: now, life, fire });
+  }
 
   text(x: number, y: number, text: string, color: string, size = 22) {
     const t = this.scene.add.text(x, y, text, { fontFamily: 'system-ui, sans-serif', fontSize: `${size}px`, fontStyle: '900', color, stroke: '#000', strokeThickness: 5 })
@@ -44,17 +53,39 @@ export class Effects {
     this.scene.tweens.add({ targets: t, y: y - 55, alpha: 0, delay: 250, duration: 750, ease: 'Quad.easeIn', onComplete: () => t.destroy() });
   }
 
+  /** Разрез по свайпу: белая вспышка-линия и две половинки, разлетающиеся в стороны с кровью. */
   slice(type: ZType, x: number, y: number, ang: number, lvl: number) {
-    const nx = -Math.sin(ang), ny = Math.cos(ang);
+    const now = this.scene.time.now / 1000;
+    const r = ZLOOK[type].r * (1 + 0.07 * lvl);
+    const cx = Math.cos(ang), cy = Math.sin(ang), nx = -cy, ny = cx;
+    this.slashes.push({ kind: 'slash', x1: x - cx * r * 1.6, y1: y - cy * r * 1.6, x2: x + cx * r * 1.6, y2: y + cy * r * 1.6, born: now, life: 0.14 });
     const sc = (1 + 0.07 * lvl) / S;
     for (const side of [1, -1]) {
       const h = this.scene.add.image(x, y, `${type}_half`).setRotation(side === 1 ? ang : ang + Math.PI).setDepth(4.6).setScale(sc);
+      const dist = 26 + r * 1.2;
       this.scene.tweens.add({
-        targets: h, x: x + nx * side * 34 + Math.cos(ang) * 22, y: y + ny * side * 34 + Math.sin(ang) * 22,
-        rotation: h.rotation + side * 0.9, alpha: 0, scale: sc * 0.85, duration: 480, ease: 'Cubic.easeOut', onComplete: () => h.destroy(),
+        targets: h, x: x + nx * side * dist + cx * 18, y: y + ny * side * dist + cy * 18,
+        rotation: h.rotation + side * (0.8 + Math.random() * 0.7), duration: 520, ease: 'Cubic.easeOut',
       });
+      this.scene.tweens.add({ targets: h, alpha: 0, scale: sc * 0.8, delay: 380, duration: 320, onComplete: () => h.destroy() });
+      this.em.gore.explode(4, x + nx * side * 6, y + ny * side * 6);
     }
   }
+
+  /** Смерть не от клинка: тело раздувается вспышкой и разлетается кусками. */
+  pop(type: ZType, x: number, y: number, lvl: number, now: number) {
+    const look = ZLOOK[type];
+    const sc = (1 + 0.07 * lvl) / S;
+    const img = this.scene.add.image(x, y, type).setDepth(4.6).setScale(sc).setTintFill(0xffffff);
+    this.scene.tweens.add({ targets: img, scale: sc * 1.55, alpha: 0, duration: 150, ease: 'Quad.easeOut', onComplete: () => img.destroy() });
+    const big = look.r >= 26;
+    this.em.chunk.setParticleTint(look.color);
+    this.em.chunk.explode(big ? 16 : 8, x, y);
+    this.em.gore.explode(big ? 18 : 8, x, y);
+    this.ring(now, x, y, look.r + 16, look.color, 0.22, 4);
+  }
+
+  private slashes: Fx[] = [];
 
   deathRing(now: number, type: ZType, x: number, y: number, r: number) {
     this.ring(now, x, y, r + 8, ZLOOK[type].color, 0.2);
@@ -73,6 +104,16 @@ export class Effects {
   }
 
   draw(g: Phaser.GameObjects.Graphics, now: number) {
+    // вспышки разреза живут по реальному времени сцены
+    const rt = this.scene.time.now / 1000;
+    this.slashes = this.slashes.filter((f) => {
+      if (f.kind !== 'slash') return false;
+      const k = (rt - f.born) / f.life;
+      if (k >= 1) return false;
+      g.lineStyle(7 * (1 - k), 0xffffff, 1 - k).lineBetween(f.x1, f.y1, f.x2, f.y2);
+      g.lineStyle(14 * (1 - k), 0xc5f6fa, 0.35 * (1 - k)).lineBetween(f.x1, f.y1, f.x2, f.y2);
+      return true;
+    });
     this.fx = this.fx.filter((f) => {
       const t = (now - f.born) / f.life;
       if (t >= 1 || t < -0.5) return false;
@@ -88,9 +129,19 @@ export class Effects {
           for (let i = 2; i < f.pts.length; i += 2) g.lineTo(f.pts[i], f.pts[i + 1]);
           g.strokePath();
         }
-      } else {
+      } else if (f.kind === 'poly') {
         g.fillStyle(f.color, a * 0.35).fillPoints(f.pts, true);
         g.lineStyle(4 + t * 6, 0xe5dbff, a).strokePoints(f.pts, true);
+      } else if (f.kind === 'wave') {
+        const k = Phaser.Math.Easing.Cubic.Out(Math.max(0, t));
+        const sc = f.s0 + (f.s1 - f.s0) * k;
+        g.lineStyle(10 * a + 2, f.fire ? 0xff922b : 0x74c0fc, a * 0.85);
+        g.beginPath();
+        for (let i = 0; i < f.pts.length; i += 2) {
+          const px = f.cx + f.pts[i] * sc, py = f.cy + f.pts[i + 1] * sc;
+          if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+        }
+        g.strokePath();
       }
       return true;
     });

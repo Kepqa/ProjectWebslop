@@ -1,4 +1,5 @@
-import { UPGRADES, type Levels, type UpgradeDef } from './upgrades';
+import { SLOTS, UPGRADES, activeSynergies, byId, slotOf, slotsUsed, synergiesOf, type Levels, type UpgradeDef } from './upgrades';
+import { sfx } from './sfx';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -167,8 +168,12 @@ export class Hud {
   }
 
   setItems(levels: Levels) {
-    this.itemsEl.innerHTML = UPGRADES.filter((u) => levels[u.id])
-      .map((u) => `<span title="${u.name}">${u.icon}<sub>${levels[u.id]}</sub></span>`).join('');
+    const it = (u: UpgradeDef) => `<span title="${u.name}">${u.icon}<sub>${levels[u.id]}</sub></span>`;
+    const owned = UPGRADES.filter((u) => levels[u.id]);
+    const blade = owned.filter((u) => u.kind !== 'trinket').map(it).join('');
+    const trink = owned.filter((u) => u.kind === 'trinket').map(it).join('');
+    const syn = activeSynergies(levels).map((x) => `<span class="syn" title="${x.name}: ${x.desc}">${x.icon}</span>`).join('');
+    this.itemsEl.innerHTML = blade + (trink ? '<i class="sep"></i>' + trink : '') + (syn ? '<i class="sep"></i>' + syn : '');
   }
 
   toast(msg: string, ms = 1600) {
@@ -178,23 +183,58 @@ export class Hud {
     this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), ms);
   }
 
-  showLevelUp(choices: UpgradeDef[], levels: Levels, onPick: (id: string) => void) {
+  showLevelUp(choices: UpgradeDef[], levels: Levels, o: { rerolls: number; onPick: (id: string) => void; onReroll: () => void; onSkip: () => void }) {
     const wrap = $('levelup');
     const cards = $('cards');
     cards.innerHTML = '';
-    for (const c of choices) {
-      const next = (levels[c.id] ?? 0) + 1;
+    const used = slotsUsed(levels);
+    const KIND = { swipe: 'Свайп', shape: 'Форма свайпа', trinket: 'Тринкет' } as const;
+    let done = false;
+    const finish = (el: HTMLElement | null, fn: () => void) => {
+      if (done) return;
+      done = true;
+      sfx.play('card', 1, 1.4);
+      if (el) el.classList.add('picked');
+      cards.classList.add('closing');
+      setTimeout(() => { wrap.classList.add('hidden'); cards.classList.remove('closing'); fn(); }, 220);
+    };
+    choices.forEach((c, i) => {
+      const cur = levels[c.id] ?? 0, next = cur + 1;
+      const pips = Array.from({ length: c.max }, (_, k) => `<i class="${k < cur ? 'on' : k === cur ? 'next' : ''}"></i>`).join('');
+      const syns = synergiesOf(c.id).map((sy) => {
+        const other = byId(sy.a === c.id ? sy.b : sy.a)!;
+        const have = (levels[other.id] ?? 0) > 0;
+        return `<div class="synline ${have ? 'ready' : ''}">🔗 + ${other.icon} ${other.name} → <b>${sy.icon} ${sy.name}</b></div>`;
+      }).join('');
+      const slot = slotOf(c.kind);
+      const badge = cur === 0 ? `<span class="new">новое · слот ${used[slot] + 1}/${SLOTS[slot]}</span>` : `<span class="up">ур. ${next}</span>`;
       const b = document.createElement('button');
       b.className = `card ${c.kind}`;
-      b.innerHTML = `<div class="icon">${c.icon}</div><div class="name">${c.name}</div>
-        <div class="lvl">${c.kind === 'trinket' ? 'Тринкет' : 'Свайп'} · ${next === 1 ? 'новое' : 'ур. ' + next}</div>
-        <div>${c.desc(next)}</div>`;
-      // Небольшая задержка, чтобы случайный свайп не выбрал карту сразу
+      b.style.animationDelay = `${i * 0.06}s`;
+      b.innerHTML = `<div class="ctop"><span class="icon">${c.icon}</span><span class="tag">${KIND[c.kind]}</span>${badge}</div>
+        <div class="name">${c.name}</div><div class="pips">${pips}</div>
+        <div class="desc">${c.desc(next)}</div>${syns}`;
+      // небольшая задержка, чтобы случайный свайп не выбрал карту сразу
       b.disabled = true;
       setTimeout(() => (b.disabled = false), 350);
-      b.addEventListener('click', () => { wrap.classList.add('hidden'); onPick(c.id); });
+      b.addEventListener('click', () => finish(b, () => o.onPick(c.id)));
       cards.appendChild(b);
-    }
+      setTimeout(() => sfx.play('card', 0.7, 1 + i * 0.15), i * 60);
+    });
+    const rr = $('lu-reroll') as HTMLButtonElement, sk = $('lu-skip') as HTMLButtonElement;
+    rr.textContent = `🎲 Реролл (${o.rerolls})`;
+    rr.disabled = o.rerolls <= 0;
+    rr.onclick = () => { if (done || o.rerolls <= 0) return; done = true; sfx.play('reroll'); o.onReroll(); };
+    sk.onclick = () => finish(null, o.onSkip);
+    // текущая сборка
+    const chip = (u: UpgradeDef) => `<span>${u.icon}<sub>${levels[u.id]}</sub></span>`;
+    const owned = UPGRADES.filter((u) => levels[u.id]);
+    const blade = owned.filter((u) => u.kind !== 'trinket');
+    const trink = owned.filter((u) => u.kind === 'trinket');
+    const syn = activeSynergies(levels);
+    $('build').innerHTML = `<div><b>Клинок ${used.blade}/${SLOTS.blade}</b> ${blade.map(chip).join('') || '—'}</div>
+      <div><b>Тринкеты ${used.trinket}/${SLOTS.trinket}</b> ${trink.map(chip).join('') || '—'}</div>
+      ${syn.length ? `<div class="bsyn"><b>Синергии</b> ${syn.map((x) => `${x.icon} ${x.name}`).join(' · ')}</div>` : ''}`;
     wrap.classList.remove('hidden');
   }
 
