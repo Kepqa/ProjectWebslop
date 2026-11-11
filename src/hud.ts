@@ -1,4 +1,4 @@
-import { SLOTS, UPGRADES, activeSynergies, byId, slotOf, slotsUsed, synergiesOf, type Levels, type UpgradeDef } from './upgrades';
+import { SLOTS, UPGRADES, activeSynergies, byId, slotOf, slotsUsed, synergiesOf, type Levels, type SynergyDef, type UpgradeDef } from './upgrades';
 import { sfx } from './sfx';
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -8,8 +8,6 @@ export interface DevAction { label: string | (() => string); fn: () => void; on?
 export class Hud {
   private hpFill = $('hp-fill');
   private hpText = $('hp-text');
-  private energyFill = $('energy-fill');
-  private energyBar = $('energy-bar');
   private xpFill = $('xp-fill');
   private timeEl = $('time');
   private killsEl = $('kills');
@@ -66,7 +64,8 @@ export class Hud {
   show(coop = false) {
     $('hud').classList.remove('hidden');
     $('hud').classList.toggle('coop', coop);
-    for (const id of ['levelup', 'end']) $(id).classList.add('hidden');
+    for (const id of ['levelup', 'end', 'chest', 'evo']) $(id).classList.add('hidden');
+    this.chestQueue = []; clearTimeout(this.evoTimer);
     this.closeModals();
   }
 
@@ -83,11 +82,13 @@ export class Hud {
     const prevCombo = Number(this.scoreKey.split('|')[1] || 0);
     this.scoreKey = key;
     $('score-num').textContent = score.toLocaleString('ru-RU');
+    $('score-num').classList.toggle('zero', score === 0);
     const c = $('combo');
     c.classList.toggle('hidden', combo < 2);
     c.classList.toggle('frenzy', frenzy);
-    c.classList.toggle('hot', combo >= 25);
-    $('combo-txt').textContent = `${combo} комбо · ×${mul.toFixed(1)}`;
+    c.classList.toggle('hot', combo >= 40);
+    c.classList.toggle('wild', combo >= 100);
+    $('combo-txt').innerHTML = `<b>${combo}</b> комбо${mul > 1 ? ` <i>×${mul.toFixed(1)}</i>` : ''}`;
     ($('combo-fill') as HTMLElement).style.width = `${Math.max(0, Math.min(1, timer)) * 100}%`;
     if (combo > prevCombo) { c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump'); }
   }
@@ -192,13 +193,13 @@ export class Hud {
     } else this.joyKnob.style.display = 'none';
   }
 
-  update(s: { hp: number; maxHp: number; energy: number; energyMax: number; xp: number; xpNext: number; time: number; total: number; kills: number; level: number; wave?: number }) {
-    const key = [s.wave ?? 0, Math.ceil(s.hp), s.maxHp, Math.round(s.energy), s.energyMax, Math.floor(s.xp), s.xpNext, Math.floor(s.time), s.kills, s.level].join('|');
+  update(s: { hp: number; maxHp: number; xp: number; xpNext: number; time: number; total: number; kills: number; level: number; wave?: number }) {
+    const key = [s.wave ?? 0, Math.ceil(s.hp), s.maxHp, Math.floor(s.xp), s.xpNext, Math.floor(s.time), s.kills, s.level].join('|');
     if (key === this.last) return;
     this.last = key;
     this.hpFill.style.width = `${Math.max(0, s.hp / s.maxHp) * 100}%`;
-    this.hpText.textContent = `${Math.max(0, Math.ceil(s.hp))} / ${s.maxHp}`;
-    this.energyFill.style.width = `${(s.energy / s.energyMax) * 100}%`;
+    this.hpText.textContent = String(Math.max(0, Math.ceil(s.hp)));
+    this.hpFill.parentElement!.classList.toggle('low', s.hp / s.maxHp < 0.35);
     this.xpFill.style.width = `${Math.min(1, s.xp / s.xpNext) * 100}%`;
     const t = Math.floor(s.time);
     const f = (x: number) => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`;
@@ -208,24 +209,64 @@ export class Hud {
     this.levelEl.textContent = String(s.level);
   }
 
-  energyEmpty() {
-    this.energyBar.classList.remove('empty');
-    void this.energyBar.offsetWidth;
-    this.energyBar.classList.add('empty');
-  }
-
-  /** Слоты как в VS: 6 под свайп/формы, 4 под тринкеты; уровень — точками, пустые слоты видны. */
+  /** Взятые предметы: клинок слева, тринкеты справа, уровень точками. Пустые слоты не рисуем — только счётчик. */
   setItems(levels: Levels) {
     const owned = Object.keys(levels).map((id) => byId(id)).filter((u): u is UpgradeDef => !!u && (levels[u.id] ?? 0) > 0);
-    const slot = (u: UpgradeDef | undefined, kind: string) => {
-      if (!u) return `<span class="slot empty ${kind}"></span>`;
+    const slot = (u: UpgradeDef) => {
       const lv = levels[u.id], pips = Array.from({ length: u.max }, (_, i) => `<b class="${i < lv ? 'on' : ''}"></b>`).join('');
-      return `<span class="slot ${kind}${lv >= u.max ? ' max' : ''}" title="${u.name} ${lv}/${u.max}"><em>${u.icon}</em><i class="pips">${pips}</i></span>`;
+      return `<span class="slot ${slotOf(u.kind)}${lv >= u.max ? ' max' : ''}" title="${u.name} ${lv}/${u.max}"><em>${u.icon}</em><i class="pips">${pips}</i></span>`;
     };
     const blade = owned.filter((u) => u.kind !== 'trinket'), trink = owned.filter((u) => u.kind === 'trinket');
-    const row = (list: UpgradeDef[], n: number, kind: string) => Array.from({ length: n }, (_, i) => slot(list[i], kind)).join('');
     const syn = activeSynergies(levels).map((x) => `<span class="syn" title="${x.name}: ${x.desc}">${x.icon}</span>`).join('');
-    this.itemsEl.innerHTML = `<div class="slots">${row(blade, SLOTS.blade, 'blade')}</div><div class="slots">${row(trink, SLOTS.trinket, 'trinket')}${syn ? `<i class="sep"></i>${syn}` : ''}</div>`;
+    const group = (list: UpgradeDef[], n: number) => (list.length ? `<div class="slots">${list.map(slot).join('')}${list.length >= n ? '<i class="full">макс</i>' : ''}</div>` : '');
+    this.itemsEl.innerHTML = group(blade, SLOTS.blade) + group(trink, SLOTS.trinket) + (syn ? `<div class="slots">${syn}</div>` : '');
+  }
+
+  // ---------- Сундук: дробь, вспышка, карточка ----------
+  private chestQueue: { u: UpgradeDef; lv: number }[] = [];
+  private chestDone: () => void = () => {};
+  showChest(u: UpgradeDef, lv: number, onDone: () => void) {
+    this.chestDone = onDone;
+    this.chestQueue.push({ u, lv });
+    if (this.chestQueue.length === 1) this.nextChest();
+  }
+  private nextChest() {
+    const el = $('chest'), item = this.chestQueue[0];
+    if (!item) { el.classList.add('hidden'); this.chestDone(); return; }
+    const { u, lv } = item;
+    $('chest-icon').textContent = u.icon;
+    $('chest-tag').textContent = lv === 1 ? 'Новый тринкет' : `Тринкет · уровень ${lv}`;
+    $('chest-name').textContent = u.name;
+    $('chest-pips').innerHTML = Array.from({ length: u.max }, (_, k) => `<i class="${k < lv - 1 ? 'on' : k === lv - 1 ? 'next' : ''}"></i>`).join('');
+    $('chest-desc').textContent = u.desc(lv);
+    $('chest-hint').textContent = this.chestQueue.length > 1 ? `Коснись — ещё ${this.chestQueue.length - 1}` : 'Коснись, чтобы забрать';
+    el.classList.remove('hidden', 'open');
+    void el.offsetWidth;
+    el.classList.add('shake');
+    sfx.play('chestopen');
+    let ready = false;
+    const open = window.setTimeout(() => { el.classList.remove('shake'); el.classList.add('open'); sfx.play('reveal'); setTimeout(() => (ready = true), 350); }, 620);
+    el.onclick = () => {
+      if (!ready) return;
+      clearTimeout(open);
+      el.onclick = null;
+      sfx.play('card', 1, 1.4);
+      this.chestQueue.shift();
+      this.nextChest();
+    };
+  }
+
+  // ---------- Связка (синергия): баннер, игра не останавливается ----------
+  private evoTimer = 0;
+  showEvolution(sy: SynergyDef) {
+    const el = $('evo');
+    $('evo-a').textContent = byId(sy.a)?.icon ?? '';
+    $('evo-b').textContent = byId(sy.b)?.icon ?? '';
+    $('evo-name').textContent = `${sy.icon} ${sy.name}`;
+    $('evo-desc').textContent = sy.desc;
+    el.classList.remove('hidden', 'show'); void el.offsetWidth; el.classList.add('show');
+    clearTimeout(this.evoTimer);
+    this.evoTimer = window.setTimeout(() => el.classList.add('hidden'), 3200);
   }
 
   toast(msg: string, ms = 1600) {
@@ -239,8 +280,7 @@ export class Hud {
     const wrap = $('levelup');
     const cards = $('cards');
     cards.innerHTML = '';
-    const used = slotsUsed(levels);
-    const KIND = { swipe: 'Свайп', shape: 'Форма свайпа', trinket: 'Тринкет' } as const;
+    const KIND = { swipe: 'Клинок', shape: 'Форма взмаха', trinket: 'Тринкет' } as const;
     let done = false;
     const finish = (el: HTMLElement | null, fn: () => void) => {
       if (done) return;
@@ -253,19 +293,21 @@ export class Hud {
     choices.forEach((c, i) => {
       const cur = levels[c.id] ?? 0, next = cur + 1;
       const pips = Array.from({ length: c.max }, (_, k) => `<i class="${k < cur ? 'on' : k === cur ? 'next' : ''}"></i>`).join('');
-      const syns = synergiesOf(c.id).map((sy) => {
+      // подсказка связки — только если напарник уже в сборке: иначе это шум, а не выбор
+      const syns = synergiesOf(c.id).filter((sy) => (levels[sy.a === c.id ? sy.b : sy.a] ?? 0) > 0).map((sy) => {
         const other = byId(sy.a === c.id ? sy.b : sy.a)!;
-        const have = (levels[other.id] ?? 0) > 0;
-        return `<div class="synline ${have ? 'ready' : ''}">🔗 + ${other.icon} ${other.name} → <b>${sy.icon} ${sy.name}</b></div>`;
+        return `<div class="synline ready">+ ${other.icon} ${other.name} = <b>${sy.icon} ${sy.name}</b></div>`;
       }).join('');
       const slot = slotOf(c.kind);
-      const badge = cur === 0 ? `<span class="new">новое · слот ${used[slot] + 1}/${SLOTS[slot]}</span>` : `<span class="up">ур. ${next}</span>`;
+      const badge = cur === 0 ? `<span class="new">новое</span>` : next >= c.max ? `<span class="up">максимум</span>` : `<span class="up">ур. ${next}</span>`;
       const b = document.createElement('button');
       b.className = `card ${c.kind}`;
       b.style.animationDelay = `${i * 0.06}s`;
-      b.innerHTML = `<div class="ctop"><span class="icon">${c.icon}</span><span class="tag">${KIND[c.kind]}</span>${badge}</div>
+      if (syns) b.classList.add('combo');
+      b.innerHTML = `<span class="icon">${c.icon}</span>
+        <div class="cbody"><div class="ctop"><span class="tag">${KIND[c.kind]}</span>${badge}</div>
         <div class="name">${c.name}</div><div class="pips">${pips}</div>
-        <div class="desc">${c.desc(next)}</div>${syns}`;
+        <div class="desc">${c.desc(next)}</div>${syns}</div>`;
       // небольшая задержка, чтобы случайный свайп не выбрал карту сразу
       b.disabled = true;
       setTimeout(() => (b.disabled = false), 350);
@@ -274,7 +316,7 @@ export class Hud {
       setTimeout(() => sfx.play('card', 0.7, 1 + i * 0.15), i * 60);
     });
     const rr = $('lu-reroll') as HTMLButtonElement, sk = $('lu-skip') as HTMLButtonElement;
-    rr.textContent = `🎲 Реролл (${o.rerolls})`;
+    rr.textContent = `Другие карты · ${o.rerolls}`;
     rr.disabled = o.rerolls <= 0;
     rr.onclick = () => { if (done || o.rerolls <= 0) return; done = true; sfx.play('reroll'); o.onReroll(); };
     sk.onclick = () => finish(null, o.onSkip);
@@ -292,7 +334,7 @@ export class Hud {
     const syn = activeSynergies(levels);
     return `<div><b>Клинок ${used.blade}/${SLOTS.blade}</b> ${blade.map(chip).join('') || '—'}</div>
       <div><b>Тринкеты ${used.trinket}/${SLOTS.trinket}</b> ${trink.map(chip).join('') || '—'}</div>
-      ${syn.length ? `<div class="bsyn"><b>Синергии</b> ${syn.map((x) => `${x.icon} ${x.name}`).join(' · ')}</div>` : ''}`;
+      ${syn.length ? `<div class="bsyn"><b>Связки</b> ${syn.map((x) => `${x.icon} ${x.name}`).join(' · ')}</div>` : ''}`;
   }
 
   showEnd(o: { title: string; text: string; primary: { label: string; fn: () => void } | null; secondary: { label: string; fn: () => void }; win?: boolean }) {

@@ -22,7 +22,7 @@ export class Effects {
     const mk = (cfg: Phaser.Types.GameObjects.Particles.ParticleEmitterConfig, tex = 'dot') =>
       scene.add.particles(0, 0, tex, { emitting: false, ...cfg }).setDepth(9);
     this.em = {
-      gore: mk({ speed: { min: 60, max: 280 }, lifespan: { min: 250, max: 600 }, scale: { start: 0.55, end: 0 }, tint: [0x8c2f39, 0x5c1a22, 0x6b8f3a, 0xa61e4d] }),
+      gore: mk({ speed: { min: 80, max: 340 }, lifespan: { min: 280, max: 650 }, scale: { start: 0.7, end: 0 }, tint: [0x8c2f39, 0x5c1a22, 0x6b8f3a, 0xa61e4d] }),
       spark: mk({ speed: { min: 120, max: 380 }, lifespan: { min: 120, max: 320 }, scale: { start: 0.35, end: 0 }, tint: [0xffffff, 0xc5f6fa, 0x66d9e8], blendMode: 'ADD' }),
       dust: mk({ speed: { min: 30, max: 140 }, lifespan: { min: 400, max: 800 }, scale: { start: 0.9, end: 0.2 }, alpha: { start: 0.5, end: 0 }, tint: [0x868e96, 0x5c5f66, 0x495057] }),
       wood: mk({ speed: { min: 90, max: 300 }, lifespan: { min: 350, max: 650 }, rotate: { min: 0, max: 360 }, scale: { start: 0.7, end: 0.3 }, tint: [0x9c6b3a, 0x7a4f28, 0xc08a50] }, 'chip'),
@@ -47,10 +47,18 @@ export class Effects {
   }
 
   text(x: number, y: number, text: string, color: string, size = 22) {
-    const t = this.scene.add.text(x, y, text, { fontFamily: 'system-ui, sans-serif', fontSize: `${size}px`, fontStyle: '900', color, stroke: '#000', strokeThickness: 5 })
+    const t = this.scene.add.text(x, y, text, { fontFamily: 'Unbounded, system-ui, sans-serif', fontSize: `${Math.round(size * 0.82)}px`, fontStyle: '800', color, stroke: '#000', strokeThickness: 5 })
       .setOrigin(0.5).setDepth(15).setResolution(2).setScale(0.4);
     this.scene.tweens.add({ targets: t, scale: 1, duration: 160, ease: 'Back.easeOut' });
     this.scene.tweens.add({ targets: t, y: y - 55, alpha: 0, delay: 250, duration: 750, ease: 'Quad.easeIn', onComplete: () => t.destroy() });
+  }
+
+  /** Цифра урона: мелкая, быстро всплывает; крит — крупнее и жёлтая. */
+  num(x: number, y: number, text: string, crit: boolean) {
+    const t = this.scene.add.text(x, y, text, { fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: crit ? '20px' : '14px', fontStyle: '700', color: crit ? '#ffd43b' : '#f1f3f5', stroke: '#000', strokeThickness: 4 })
+      .setOrigin(0.5).setDepth(15).setResolution(2).setScale(crit ? 1.5 : 1.15);
+    this.scene.tweens.add({ targets: t, scale: 1, duration: 110, ease: 'Quad.easeOut' });
+    this.scene.tweens.add({ targets: t, y: y - 30, alpha: 0, delay: 120, duration: 420, ease: 'Quad.easeIn', onComplete: () => t.destroy() });
   }
 
   /** Разрез по свайпу: белая вспышка-линия и две половинки, разлетающиеся в стороны с кровью. */
@@ -130,8 +138,8 @@ export class Effects {
           g.strokePath();
         }
       } else if (f.kind === 'poly') {
-        g.fillStyle(f.color, a * 0.35).fillPoints(f.pts, true);
-        g.lineStyle(4 + t * 6, 0xe5dbff, a).strokePoints(f.pts, true);
+        g.fillStyle(f.color, a * 0.28).fillPoints(f.pts, true);
+        g.lineStyle(3 + t * 5, 0xffffff, a * 0.9).strokePoints(f.pts, true);
       } else if (f.kind === 'wave') {
         const k = Phaser.Math.Easing.Cubic.Out(Math.max(0, t));
         const sc = f.s0 + (f.s1 - f.s0) * k;
@@ -149,22 +157,29 @@ export class Effects {
 }
 
 /** Отрисовка следа свайпа (общая). */
-export interface TrailSeg { x1: number; y1: number; x2: number; y2: number; born: number; kind: 'blade' | 'dull' | 'echo'; width: number }
+export interface TrailSeg { x1: number; y1: number; x2: number; y2: number; born: number; kind: 'blade' | 'dull' | 'echo'; width: number; color?: number }
 
 export function drawTrail(g: Phaser.GameObjects.Graphics, s: TrailSeg, now: number, life: number) {
   const a = Math.max(0, 1 - (now - s.born) / life);
   if (s.kind === 'dull') {
-    g.lineStyle(3, 0x868e96, a * 0.6).lineBetween(s.x1, s.y1, s.x2, s.y2);
+    g.lineStyle(3, 0x868e96, a * 0.5).lineBetween(s.x1, s.y1, s.x2, s.y2);
     return;
   }
-  const glow = s.kind === 'echo' ? 0xb197fc : 0x66d9e8;
-  g.lineStyle(s.width * 1.3 * a, glow, a * 0.18).lineBetween(s.x1, s.y1, s.x2, s.y2);
-  g.lineStyle(s.width * a, glow, a * 0.4).lineBetween(s.x1, s.y1, s.x2, s.y2);
-  g.lineStyle(Math.max(2, s.width * 0.3 * a), 0xffffff, a).lineBetween(s.x1, s.y1, s.x2, s.y2);
+  // Лента клинка: чем старше участок, тем он тоньше — хвост сам сходит на нет.
+  // Скруглённые стыки, чтобы широкий след не рвался на поворотах.
+  const glow = s.kind === 'echo' ? 0xb197fc : s.color ?? 0x66d9e8;
+  const k = a * a * (3 - 2 * a);
+  const w = s.width * (0.25 + 0.75 * k);
+  g.lineStyle(w * 2.1, glow, a * 0.13).lineBetween(s.x1, s.y1, s.x2, s.y2);
+  g.lineStyle(w * 1.15, glow, a * 0.55).lineBetween(s.x1, s.y1, s.x2, s.y2);
+  g.fillStyle(glow, a * 0.55).fillCircle(s.x2, s.y2, w * 0.575);
+  const core = Math.max(1.5, w * 0.42);
+  g.lineStyle(core, 0xffffff, Math.min(1, a * 1.3)).lineBetween(s.x1, s.y1, s.x2, s.y2);
+  g.fillStyle(0xffffff, Math.min(1, a * 1.3)).fillCircle(s.x2, s.y2, core / 2);
 }
 
 export function trailLife(kind: TrailSeg['kind'], long: boolean) {
-  return kind === 'dull' ? 0.15 : kind === 'echo' ? 0.25 : long ? 0.6 : 0.22;
+  return kind === 'dull' ? 0.15 : kind === 'echo' ? 0.25 : long ? 0.6 : 0.26;
 }
 
 /** Телеграфы атак (общий формат для сети): [код, ...параметры]. */

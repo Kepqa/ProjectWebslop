@@ -9,7 +9,7 @@ import { STAGES, loadProgress } from './stages';
 import { fetchStats, isDev, trackRun, trackVisit } from './stats';
 import { CHAPTERS } from './story';
 import { settings, saveSettings } from './settings';
-import { META, buyMeta, loadMeta } from './meta';
+import { BLADES, META, buyMeta, loadMeta, pickBlade } from './meta';
 import { ACHIEVEMENTS, LOCKED_BY, isUnlocked, loadAch, unlockedSet } from './achievements';
 import { SYNERGIES, UPGRADES, byId } from './upgrades';
 import { BUILD, BUILD_DATE, VERSION, checkUpdate } from './version';
@@ -42,12 +42,12 @@ function cards(wrapId: string, onPick: (p: Pick) => void, opts: { story?: boolea
   };
   if (opts.story) CHAPTERS.forEach((ch, i) => {
     const locked = !ch.ready || (i > (p.story ?? 0) && !isDev());
-    const st = !ch.ready ? '🔨 Скоро' : locked ? '🔒' : (p.story ?? 0) > i ? '✅ Пройдена' : '▶ Играть';
+    const st = !ch.ready ? 'Скоро' : locked ? 'Закрыто' : (p.story ?? 0) > i ? 'Пройдена' : 'Играть';
     add(`s1 ${ch.ready ? '' : 'locked-soon'}`, `<span class="snum">Глава ${i + 1}</span><span class="sname">${ch.name}</span><span class="sdesc">${ch.goal}</span><span class="sstat">${st}</span>`, locked, { mode: 'story', stage: 0, chapter: i });
   });
   if (opts.survival) STAGES.forEach((st, i) => {
     const locked = i > p.unlocked && !isDev();
-    const stat = locked ? '🔒 Пройди предыдущий' : p.cleared[i] ? `✅ ${fmt(p.best[i] ?? 0)}` : p.best[i] ? `Рекорд ${fmt(p.best[i])}` : '▶ Играть';
+    const stat = locked ? 'Пройди предыдущую' : p.cleared[i] ? `Пройдена · ${fmt(p.best[i] ?? 0)}` : p.best[i] ? `Рекорд ${fmt(p.best[i])}` : 'Играть';
     add(`s${i + 1}`, `<span class="snum">Арена ${i + 1}</span><span class="sname">${st.name}</span><span class="sstat">${stat}</span>`, locked, { mode: 'survival', stage: i, chapter: 0 });
   });
 }
@@ -75,7 +75,7 @@ function showPanel(id: Panel) {
 /** Справочник предметов: что делает, синергии, как открыть. */
 function renderCodex() {
   const un = unlockedSet();
-  const groups: [string, string][] = [['swipe', '🗡️ Свойства клинка'], ['shape', '🌀 Формы свайпа'], ['trinket', '🏮 Тринкеты']];
+  const groups: [string, string][] = [['swipe', 'Свойства клинка'], ['shape', 'Формы свайпа'], ['trinket', 'Тринкеты']];
   $('codex').innerHTML = groups.map(([kind, title]) => `<div class="cx-group"><h3>${title}</h3><div class="cx-grid">${UPGRADES.filter((u) => u.kind === kind).map((u) => {
     const ok = isUnlocked(u.id, un);
     const syn = SYNERGIES.filter((x) => x.a === u.id || x.b === u.id).map((x) => `${x.icon} ${x.name} (+ ${byId(x.a === u.id ? x.b : x.a)!.icon})`).join(', ');
@@ -95,7 +95,7 @@ function renderAch() {
 
 function renderBones() {
   const b = loadMeta().bones;
-  $('bones').textContent = `🦴 ${b}`;
+  $('bones').textContent = String(b);
   $('bones-small').textContent = String(b);
   $('ach-small').textContent = `${loadAch().done.length}/${ACHIEVEMENTS.length}`;
 }
@@ -103,6 +103,26 @@ function renderBones() {
 /** Мастерская: постоянные улучшения за кости. */
 function renderShop() {
   const m = loadMeta();
+  const bw = $('blades');
+  bw.innerHTML = '';
+  for (const d of BLADES) {
+    const owned = m.blades.includes(d.id), active = m.blade === d.id;
+    const c = document.createElement('div');
+    c.className = `shopcard blade${active ? ' active' : ''}`;
+    const hex = `#${d.color.toString(16).padStart(6, '0')}`;
+    // маленькая схема взмаха: длина и ширина следа в масштабе
+    const L = Math.round(34 + 46 * Math.min(1.5, d.len) / 1.5), Wd = Math.round(3 + 5 * d.width);
+    c.innerHTML = `<div class="top"><i>${d.icon}</i>${d.name}</div>
+      <svg class="stroke-demo" viewBox="0 0 100 26" preserveAspectRatio="xMinYMid meet" aria-hidden="true"><path d="M8 20 Q ${8 + L / 2} ${-2} ${8 + L} 14" stroke="${hex}" stroke-width="${Wd}" stroke-linecap="round" fill="none" opacity=".55"/><path d="M8 20 Q ${8 + L / 2} ${-2} ${8 + L} 14" stroke="#fff" stroke-width="${Math.max(1.5, Wd * 0.35)}" stroke-linecap="round" fill="none"/></svg>
+      <div class="d">${d.desc}</div>`;
+    const b = document.createElement('button');
+    b.textContent = active ? 'В руке' : owned ? 'Взять' : `Купить · ${d.cost}`;
+    if (!owned && !active) b.classList.add('cost');
+    b.disabled = active || (!owned && m.bones < d.cost);
+    b.onclick = () => { if (pickBlade(d.id)) { sfx.unlock(); sfx.play(owned ? 'card' : 'chest'); renderShop(); renderBones(); } };
+    c.appendChild(b);
+    bw.appendChild(c);
+  }
   const wrap = $('shop');
   wrap.innerHTML = '';
   for (const d of META) {
@@ -113,7 +133,8 @@ function renderShop() {
       <div class="pips">${Array.from({ length: d.max }, (_, k) => `<i class="${k < l ? 'on' : ''}"></i>`).join('')}</div>
       <div class="d">${maxed ? d.desc(l) : `Сейчас: ${l ? d.desc(l) : '—'}<br>Дальше: ${d.desc(l + 1)}`}</div>`;
     const b = document.createElement('button');
-    b.textContent = maxed ? 'Максимум' : `Купить · ${cost} 🦴`;
+    b.textContent = maxed ? 'Максимум' : `Купить · ${cost}`;
+    if (!maxed) b.classList.add('cost');
     b.disabled = maxed || m.bones < cost;
     b.onclick = () => { if (buyMeta(d.id)) { sfx.unlock(); sfx.play('chest'); renderShop(); renderBones(); } };
     c.appendChild(b);
@@ -176,7 +197,7 @@ function showMenu(leaveRoom: boolean) {
   stopScenes();
   if (leaveRoom) closeNet();
   $('hud').classList.add('hidden');
-  for (const id of ['levelup', 'end', 'pause-ov', 'vote', 'wait', 'countdown']) $(id).classList.add('hidden');
+  for (const id of ['levelup', 'end', 'pause-ov', 'vote', 'wait', 'countdown', 'chest', 'evo']) $(id).classList.add('hidden');
   for (const id of ['joy-base', 'joy-knob']) $(id).style.display = 'none';
   document.body.style.background = '';
   renderStages();
@@ -277,9 +298,9 @@ $('coop-cancel').addEventListener('click', () => closeNet());
 // ---------- Звук ----------
 const muteBtn = $('mute');
 const syncMute = () => {
-  muteBtn.textContent = sfx.muted ? '🔇' : '🔊';
-  $('set-sound').textContent = sfx.muted ? '🔇 Звук выкл' : '🔊 Звук';
+  muteBtn.classList.toggle('muted', sfx.muted);
   $('set-sound').classList.toggle('on', !sfx.muted);
+  $('set-music').classList.toggle('on', sfx.musicOn);
 };
 syncMute();
 const toggleMute = () => {
@@ -288,6 +309,7 @@ const toggleMute = () => {
 };
 muteBtn.addEventListener('click', toggleMute);
 $('set-sound').addEventListener('click', toggleMute);
+$('set-music').addEventListener('click', () => { sfx.unlock(); sfx.setMusic(!sfx.musicOn); syncMute(); });
 
 // Гироскоп
 

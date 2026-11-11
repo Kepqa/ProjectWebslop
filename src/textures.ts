@@ -14,8 +14,8 @@ export const ZTYPES: ZType[] = ['walker', 'runner', 'spitter', 'charger', 'brute
 export const WALK_FRAMES = 4;
 
 export const ZLOOK: Record<ZType, ZLook> = {
-  walker: { r: 14, color: 0x8fb36a, dark: 0x3d5e25, eye: 0xffe066, cloth: 0x4c5f73 },
-  runner: { r: 11, color: 0xa9bd63, dark: 0x5c6620, eye: 0xff6b6b, cloth: 0x8a3b3b },
+  walker: { r: 15, color: 0xa3cc74, dark: 0x3d5e25, eye: 0xffe066, cloth: 0x6688a8 },
+  runner: { r: 12, color: 0xc2d670, dark: 0x5c6620, eye: 0xff6b6b, cloth: 0xc24a4a },
   spitter: { r: 14, color: 0x6fc79a, dark: 0x22604a, eye: 0xd8f5a2, cloth: 0x5a6b3a },
   charger: { r: 18, color: 0xa47a5c, dark: 0x4a2f20, eye: 0xff8787, cloth: 0x3d3d45 },
   brute: { r: 26, color: 0x6f9a6a, dark: 0x22392a, eye: 0xffd43b, cloth: 0x6b5a3a },
@@ -261,7 +261,7 @@ function drawZombie(g: Phaser.GameObjects.Graphics, t: ZType, gen: (k: string, w
   if (!ghost) {
     g.fillStyle(0x6b1a22, 0.75).fillCircle(cx - R * 0.3, cy + R * 0.35, R * 0.18).fillCircle(cx - R * 0.05, cy - R * 0.55, R * 0.12);
   }
-  g.lineStyle(Math.max(1.5, r * 0.09) * s, 0x111111, 0.6).strokeEllipse(cx - R * 0.15, cy, R * 1.35, R * 2.05);
+  g.lineStyle(Math.max(2, r * 0.12) * s, 0x0a0a0a, 0.9).strokeEllipse(cx - R * 0.15, cy, R * 1.35, R * 2.05);
   // особенности
   if (t === 'bomber') {
     g.fillStyle(0x212529).fillCircle(cx - R * 0.2, cy, R * 0.5);
@@ -284,7 +284,7 @@ function drawZombie(g: Phaser.GameObjects.Graphics, t: ZType, gen: (k: string, w
   if (t === 'necro') { g.fillStyle(0x1e0f4a).fillCircle(hx - R * 0.1, cy, hr * 1.25); }
   g.fillStyle(color, a).fillCircle(hx, cy, hr);
   g.fillStyle(0x000000, 0.15).fillCircle(hx - hr * 0.3, cy + hr * 0.2, hr * 0.7);
-  g.lineStyle(Math.max(1.5, r * 0.08) * s, dark, 0.9).strokeCircle(hx, cy, hr);
+  g.lineStyle(Math.max(2, r * 0.11) * s, 0x0a0a0a, 0.9).strokeCircle(hx, cy, hr);
   if (t === 'charger') {
     g.fillStyle(0xe9ecef).fillTriangle(hx + hr * 0.3, cy - hr * 0.8, hx + hr * 1.5, cy - hr * 1.2, hx + hr * 0.7, cy - hr * 0.2);
     g.fillTriangle(hx + hr * 0.3, cy + hr * 0.8, hx + hr * 1.5, cy + hr * 1.2, hx + hr * 0.7, cy + hr * 0.2);

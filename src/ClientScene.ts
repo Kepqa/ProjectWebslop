@@ -14,7 +14,7 @@ import { World, K_FLOOR, K_TOXIC, K_DOOR, K_DOOROPEN, TILE, key2, type Body } fr
 import { Controls } from './controls';
 import { Look } from './look';
 import { CHAPTERS, type StoryMap } from './story';
-import { BOMB_R, PLAYER_R, PLAYER_SPEED, RUN_MUL, SLAM_R, SWIPE_COST, SWIPE_MIN_SPEED, drawAura, drawBeacon, drawBurn, drawCharge, drawRevive, drawVitals, drawVortex, styleDowned } from './GameScene';
+import { BOMB_R, PLAYER_R, PLAYER_SPEED, RUN_MUL, SLAM_R, SWIPE_MIN_SPEED, bladeColor, worldZoomFor, drawAura, drawBeacon, drawBurn, drawCharge, drawRevive, drawVitals, drawVortex, styleDowned } from './GameScene';
 
 interface ZView { img: Phaser.GameObjects.Image; type: number; fx: number; fy: number; tx: number; ty: number; fr: number; tr: number; t0: number; seen: number; ph: number; base: string }
 interface PState { x: number; y: number; lvl: number; rot: number; hp: number; mhp: number; en: number; emx: number; alive: boolean; down: number; inv: number; hurt: boolean; tox: boolean; aura: number; bones: number; ba: number; sc: number }
@@ -47,7 +47,6 @@ export class ClientScene extends Phaser.Scene {
   private levels: Levels = {};
   private stats: Stats = computeStats({});
   private mb = metaBonus({});
-  private energyPred = 100;
   private zv = new Map<number, ZView>();
   private gemImgs: Phaser.GameObjects.Image[] = [];
   private projImgs: Phaser.GameObjects.Image[] = [];
@@ -62,7 +61,7 @@ export class ClientScene extends Phaser.Scene {
   private lastSeq = 0;
   private hdr: { t: number; T: number; k: number; xp: number; xn: number; lv: number; boss: [string, number] | null } = { t: 0, T: STAGE_TIME, k: 0, xp: 0, xn: 10, lv: 1, boss: null };
   private paused = false; private over = false;
-  private strokes = new Map<number, { sid: number; lastSX: number; lastSY: number; lastT: number; px: number; py: number; moved: boolean; charged: boolean }>();
+  private strokes = new Map<number, { sid: number; lastSX: number; lastSY: number; lastT: number; px: number; py: number; moved: boolean; charged: boolean; left: number }>();
   private mines: { img: Phaser.GameObjects.Image; t: number }[] = [];
   private vortices: { x: number; y: number; r: number; until: number; dur: number }[] = [];
   private sidSeq = 0;
@@ -107,9 +106,10 @@ export class ClientScene extends Phaser.Scene {
     this.me = { x: 40, y: 0, lvl: 0, rot: 0, moving: 0, bob: 0 };
     if (this.map) { this.me.x = (this.map.start.x + 0.5) * TILE + 30; this.me.y = (this.map.start.y + 0.5) * TILE; }
     this.wave = 0; this.exitSeen = false;
-    this.levels = {}; this.mb = metaBonus(loadMeta().lv); this.stats = computeStats(this.levels, this.mb); this.energyPred = this.stats.energyMax;
+    const saved = loadMeta();
+    this.levels = {}; this.mb = metaBonus(saved.lv, saved.blade); this.stats = computeStats(this.levels, this.mb);
     const un = unlockedSet();
-    this.net.send({ t: 'meta', lv: loadMeta().lv, unl: un ? [...un] : null });
+    this.net.send({ t: 'meta', lv: saved.lv, blade: saved.blade, unl: un ? [...un] : null });
     this.zv.clear(); this.gemImgs = []; this.projImgs = []; this.boomImgs = []; this.boneImgs = [[], []];
     this.segs = []; this.burns = []; this.tele = []; this.projs = []; this.ps = [];
     this.lastSeq = 0; this.paused = false; this.over = false; this.endStrokes(); this.controls?.reset();
@@ -124,6 +124,7 @@ export class ClientScene extends Phaser.Scene {
     this.hud = new Hud();
     this.hud.show(true);
     this.hud.setItems(this.levels);
+    sfx.musicStart();
     this.hud.onPause = () => this.requestPause();
     this.hud.toast(this.map ? `Глава ${this.chapter + 1}: ${CHAPTERS[this.chapter].goal}` : `${this.stage.name} · кооп — 10 волн`, 2200);
 
@@ -154,7 +155,7 @@ export class ClientScene extends Phaser.Scene {
 
   private applyZoom() {
     const w = window.innerWidth, h = window.innerHeight;
-    this.worldZoom = Phaser.Math.Clamp(Math.min(w, h) / 640, 0.65, 1.35);
+    this.worldZoom = worldZoomFor(w, h);
     this.cameras.main.setZoom(this.worldZoom * this.dpr);
   }
 
@@ -205,6 +206,7 @@ export class ClientScene extends Phaser.Scene {
 
   private end(m: Msg) {
     this.over = true;
+    sfx.musicStop();
     this.hud.closeModals(); this.hud.showWait(null); this.hud.setBoss(null); this.hud.setJoystick(null);
     const prog = loadProgress();
     prog.best[this.stageIdx] = Math.max(prog.best[this.stageIdx] ?? 0, Math.floor(this.hdr.t));
@@ -243,7 +245,6 @@ export class ClientScene extends Phaser.Scene {
       x: a[0], y: a[1], lvl: a[2], rot: a[3], hp: a[4], mhp: a[5], en: a[6], emx: a[7], alive: !!a[8], down: a[9], inv: a[10], hurt: !!a[11], tox: !!a[12],
       aura: a[13], bones: a[14], ba: a[15], sc: a[16],
     }));
-    if (this.ps[1]) this.energyPred = this.ps[1].en;
     const lv = h.lv2 as Levels;
     if (JSON.stringify(lv) !== JSON.stringify(this.levels)) { this.levels = { ...lv }; this.stats = computeStats(this.levels, this.mb); this.hud.setItems(this.levels); }
     const mate = this.ps[0];
@@ -309,7 +310,7 @@ export class ClientScene extends Phaser.Scene {
       case 'P': {
         const f = e[1] as number[]; const pts: { x: number; y: number }[] = [];
         for (let i = 0; i < f.length; i += 2) pts.push({ x: f[i], y: f[i + 1] });
-        this.vfx.poly(now, pts, 0xb197fc);
+        this.vfx.poly(now, pts, n(2) || 0x74c0fc);
         break;
       }
       case 'c': this.vfx.slice(ZTYPES[n(1)], n(2), n(3), n(4), n(5)); break;
@@ -341,7 +342,8 @@ export class ClientScene extends Phaser.Scene {
         this.chunks.setDoor(tx, ty, st);
         break;
       }
-      case 'g': this.segs.push({ x1: n(1), y1: n(2), x2: n(3), y2: n(4), born: now, kind: (['blade', 'dull', 'echo'] as const)[n(5)], width: n(6) }); break;
+      case 'g': this.segs.push({ x1: n(1), y1: n(2), x2: n(3), y2: n(4), born: now, kind: (['blade', 'dull', 'echo'] as const)[n(5)], width: n(6), color: n(7) || undefined }); break;
+      case 'n': this.vfx.num(n(1), n(2), String(e[3]), !!n(4)); break;
       case 'B': this.burns.push({ x1: n(1), y1: n(2), x2: n(3), y2: n(4), until: now + n(5), w: n(6) }); break;
     }
   }
@@ -379,7 +381,7 @@ export class ClientScene extends Phaser.Scene {
       return;
     }
     const sid = ++this.sidSeq;
-    this.strokes.set(p.id, { sid, lastSX: sx, lastSY: sy, lastT: performance.now(), px: w.x, py: w.y, moved: false, charged: false });
+    this.strokes.set(p.id, { sid, lastSX: sx, lastSY: sy, lastT: performance.now(), px: w.x, py: w.y, moved: false, charged: false, left: this.stats.strokeLen });
     this.net.send({ t: 'sd', s: sid, x: Math.round(w.x), y: Math.round(w.y) });
     sfx.swipeStart(p.id);
   }
@@ -397,11 +399,11 @@ export class ClientScene extends Phaser.Scene {
     // предсказываем вид следа локально, урон считает хост
     let kind: TrailSeg['kind'] = 'dull';
     if (v >= SWIPE_MIN_SPEED) {
-      const cost = d * SWIPE_COST * this.stats.costMul;
-      if (this.energyPred >= cost) { this.energyPred -= cost; kind = 'blade'; } else this.hud.energyEmpty();
+      // длину взмаха считает хост (убийства её продлевают) — здесь только прикидка для вида следа
+      if (s.left > -this.stats.strokeLen * 0.5 || this.sc[4]) { s.left -= d; kind = 'blade'; }
     }
     if (kind === 'blade' && Math.random() < 0.5) this.vfx.burst('spark', 1, w.x, w.y);
-    this.segs.push({ x1: s.px, y1: s.py, x2: w.x, y2: w.y, born: this.now, kind, width: kind === 'blade' ? this.stats.bladeWidth * (s.charged ? 1.5 : 1) : 4 });
+    this.segs.push({ x1: s.px, y1: s.py, x2: w.x, y2: w.y, born: this.now, kind, width: kind === 'blade' ? this.stats.bladeWidth * (s.charged ? 1.5 : 1) : 4, color: bladeColor(this.mb.blade) });
     this.net.send({ t: 'sm', s: s.sid, x: Math.round(w.x), y: Math.round(w.y), d: +d.toFixed(1), v: +v.toFixed(3) });
     sfx.swipeUpdate(p.id, v, kind === 'blade');
     s.moved = true;
@@ -440,7 +442,6 @@ export class ClientScene extends Phaser.Scene {
       this.world.updateLevel(me);
       me.moving = mag;
       if (mag > 0.05) me.rot = Math.atan2(dy, dx);
-      this.energyPred = Math.min(this.stats.energyMax, this.energyPred + this.stats.energyRegen * dt);
     } else me.moving = 0;
     if (now - this.mvAt > 33) {
       this.mvAt = now;
@@ -513,7 +514,7 @@ export class ClientScene extends Phaser.Scene {
       const x = i === 1 ? this.me.x : this.mateImg.x, y = i === 1 ? this.me.y : this.mateImg.y;
       if (p.aura > 0 && p.alive) drawAura(tg, x, y, p.aura, now);
       if (!p.alive) drawRevive(tg, x, y, p.down, now);
-      else drawVitals(tg, x, y, p.hp / p.mhp, i === 1 ? this.energyPred / p.emx : p.en / p.emx);
+      else drawVitals(tg, x, y, p.hp / p.mhp);
       // кости-тринкеты
       const imgs = this.boneImgs[i];
       while (imgs.length < p.bones) imgs.push(this.add.image(0, 0, 'bone').setDepth(6).setScale(1 / S));
@@ -553,10 +554,11 @@ export class ClientScene extends Phaser.Scene {
 
     const my = this.myState;
     this.hud.update({
-      hp: my?.hp ?? 100, maxHp: my?.mhp ?? 100, energy: Math.min(this.energyPred, my?.emx ?? 100), energyMax: my?.emx ?? 100,
+      hp: my?.hp ?? 100, maxHp: my?.mhp ?? 100,
       xp: this.hdr.xp, xpNext: this.hdr.xn, time: this.hdr.t, total: this.hdr.T, kills: this.hdr.k, level: this.hdr.lv, wave: this.wave,
     });
     this.hud.setScore(this.sc[0], this.sc[1], this.sc[2], this.sc[3], !!this.sc[4]);
+    sfx.musicMood(this.paused || this.over ? -1 : this.sc[1], !!this.hdr.boss, !!this.sc[4], my ? my.hp / my.mhp : 1);
   }
 }
 

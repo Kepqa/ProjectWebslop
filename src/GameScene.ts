@@ -12,39 +12,40 @@ import { S, WALK_FRAMES, ZLOOK, ZTYPES, makeTextures, zOrigin, type ZType } from
 import { World, FlowField, TILE, K_CRATE, K_GRAVE, K_FLOOR, K_PIT, K_TOXIC, K_DOOR, K_DOOROPEN, K_EXIT, key2, type Body } from './world';
 import { Controls } from './controls';
 import { Look } from './look';
-import { addBones, loadMeta, metaBonus, type MetaBonus } from './meta';
-import { recordLife, unlockedSet } from './achievements';
+import { BLADES, addBones, loadMeta, metaBonus, type MetaBonus } from './meta';
+import { nearestGoals, recordLife, unlockedSet, type AchDef } from './achievements';
 import { CHAPTERS, type StoryMap } from './story';
 
-interface ZDef { hp: number; speed: number; dmg: number; xp: number; heavy?: boolean; boss?: string }
+/** fodder — «мясо»: HP не растёт со временем, базовый клинок всегда режет с одного взмаха. */
+interface ZDef { hp: number; speed: number; dmg: number; xp: number; heavy?: boolean; boss?: string; fodder?: boolean }
 
 export const ZDEF: Record<ZType, ZDef> = {
-  walker: { hp: 6, speed: 46, dmg: 9, xp: 1 },
-  runner: { hp: 4.5, speed: 80, dmg: 7, xp: 1 },
-  spitter: { hp: 9, speed: 42, dmg: 8, xp: 2 },
-  charger: { hp: 21, speed: 52, dmg: 16, xp: 3 },
-  brute: { hp: 60, speed: 38, dmg: 22, xp: 7, heavy: true },
-  jumper: { hp: 10, speed: 50, dmg: 10, xp: 2 },
-  bomber: { hp: 7, speed: 62, dmg: 0, xp: 2 },
-  shield: { hp: 20, speed: 42, dmg: 12, xp: 3 },
-  ghost: { hp: 7, speed: 52, dmg: 8, xp: 2 },
+  walker: { hp: 3, speed: 50, dmg: 7, xp: 1, fodder: true },
+  runner: { hp: 2.5, speed: 84, dmg: 6, xp: 1, fodder: true },
+  spitter: { hp: 6, speed: 42, dmg: 8, xp: 2 },
+  charger: { hp: 14, speed: 52, dmg: 16, xp: 3 },
+  brute: { hp: 45, speed: 38, dmg: 22, xp: 7, heavy: true },
+  jumper: { hp: 7, speed: 50, dmg: 10, xp: 2 },
+  bomber: { hp: 5, speed: 62, dmg: 0, xp: 2 },
+  shield: { hp: 14, speed: 42, dmg: 12, xp: 3 },
+  ghost: { hp: 5, speed: 52, dmg: 8, xp: 2 },
   colossus: { hp: 300, speed: 44, dmg: 30, xp: 0, heavy: true, boss: 'Гнилой Колосс' },
   brood: { hp: 230, speed: 38, dmg: 24, xp: 0, heavy: true, boss: 'Матка Роя' },
   leaper: { hp: 260, speed: 50, dmg: 26, xp: 0, heavy: true, boss: 'Скакун-Титан' },
   necro: { hp: 220, speed: 55, dmg: 20, xp: 0, heavy: true, boss: 'Некромант' },
-  dog: { hp: 4.5, speed: 84, dmg: 7, xp: 1 },
-  boar: { hp: 27, speed: 50, dmg: 15, xp: 3 },
+  dog: { hp: 2.5, speed: 88, dmg: 6, xp: 1, fodder: true },
+  boar: { hp: 18, speed: 50, dmg: 15, xp: 3 },
 };
 
 export const PLAYER_R = 15;
 export const PLAYER_SPEED = 195;
-export const SWIPE_MIN_SPEED = 0.45; // CSS px/мс — медленнее не режет
-export const SWIPE_COST = 0.035; // энергии на CSS-пиксель
+export const SWIPE_MIN_SPEED = 0.32; // CSS px/мс — медленнее не режет
+/** Запас попадания: клинок цепляет чуть шире нарисованного следа — на телефоне палец закрывает цель. */
+const HIT_ASSIST = 6;
 export const SLAM_R = 180;
 export const BOMB_R = 105;
-const RUNE_COST = 18;
 const CELL = 64;
-const MAX_ZOMBIES = 240;
+const MAX_ZOMBIES = 340;
 const BARREL_R = 14;
 const BARREL_BLAST = 130;
 const BLADE_KNOCK = 260;
@@ -59,11 +60,11 @@ type ZState = 'walk' | 'windup' | 'dash' | 'stun' | 'slam' | 'charge' | 'jump' |
 export interface Player extends Body {
   idx: number; img: Phaser.GameObjects.Image; remote: boolean;
   hp: number; inv: number; hurtT: number; moving: number; bob: number; rot: number;
-  energy: number; levels: Levels; stats: Stats;
+  levels: Levels; stats: Stats;
   alive: boolean; downT: number; phoenixUsed: boolean; bellCd: number; grenadeT: number; boomCd: number; crossCd: number;
   boneImgs: Phaser.GameObjects.Image[]; boneAngle: number; auraTick: number; killsForHeal: number; onToxic: boolean; toxicTick: number;
   noise: number; running: boolean; meta: MetaBonus; unlocked: Set<string> | null;
-  runeAt: number; rerolls: number; synSeen: Set<string>; vortexCd: number; spearCd: number; waveCd: number;
+  rerolls: number; synSeen: Set<string>; vortexCd: number; spearCd: number; waveCd: number;
   field: FlowField; fTx: number; fTy: number; fAt: number;
   // необычные предметы
   beatAt: number; beatN: number; stillT: number; rooted: boolean; wardAt: number; totemT: number; barrelT: number;
@@ -94,8 +95,8 @@ interface Proj {
   dead: boolean; friendly: boolean; kind: number; // 0 кислота, 1 сфера
 }
 interface Boom { x: number; y: number; vx: number; vy: number; t: number; img: Phaser.GameObjects.Image; dmg: number; dead: boolean; owner: Player }
-interface Gem { x: number; y: number; value: number; chest: boolean; heal: boolean; img: Phaser.GameObjects.Image; pulled: boolean; t: number }
-interface Seg { x1: number; y1: number; x2: number; y2: number; born: number; kind: 'blade' | 'dull' | 'echo'; width: number; sid: number; remote: boolean }
+interface Gem { x: number; y: number; value: number; chest: boolean; heal: boolean; img: Phaser.GameObjects.Image; pulled: boolean; t: number; to: Player | null }
+interface Seg { x1: number; y1: number; x2: number; y2: number; born: number; kind: 'blade' | 'dull' | 'echo'; width: number; sid: number; remote: boolean; color?: number }
 interface Bolt { x: number; y: number; vx: number; vy: number; life: number; dmg: number; pierce: boolean; hit: Set<Zombie>; kind: 3 | 4 | 7 | 9; img: Phaser.GameObjects.Image; owner: Player; dead: boolean; bounces: number; homing: boolean }
 interface Mine { x: number; y: number; t: number; r: number; dmg: number; owner: Player; img: Phaser.GameObjects.Image }
 interface Vortex { x: number; y: number; r: number; until: number; dur: number; dps: number; owner: Player; tick: number }
@@ -106,9 +107,11 @@ interface Stroke {
   lastSX: number; lastSY: number; lastT: number; segs: Seg[]; loopStart: number; cssLen: number; sounded: boolean;
   charged: boolean; minePx: number; lastDir: number | null; mhit: Map<Zombie, number>; pid: number;
   beatChecked: boolean; beat: boolean; trapped: boolean;
+  /** сколько CSS-пикселей взмах ещё режет; dulled — уже затупился (звук один раз) */
+  left: number; dulled: boolean;
 }
 
-type PauseMode = '' | 'levelup' | 'user' | 'cd';
+type PauseMode = '' | 'levelup' | 'user' | 'cd' | 'chest';
 
 export class GameScene extends Phaser.Scene {
   private hud!: Hud;
@@ -148,7 +151,7 @@ export class GameScene extends Phaser.Scene {
   private grid = new Map<number, Zombie[]>();
   private props: Prop[] = [];
   private packSeq = 0; private packSpeed = new Map<number, number>(); private packC = new Map<number, { x: number; y: number; n: number }>();
-  private chronoUntil = 0; private barrelSpawnT = 4; private markPulse = 0; private bonkAt = 0;
+  private chronoUntil = 0; private barrelSpawnT = 4; private markPulse = 0; private bonkAt = 0; private numAt = 0;
   private strokes = new Map<number, Stroke>();
   private remoteStrokes = new Map<number, Stroke>();
   private controls!: Controls;
@@ -164,6 +167,7 @@ export class GameScene extends Phaser.Scene {
   private falls = 0; private rec = { kills: 0, bosses: 0, falls: 0 }; private lifeAt = 0;
   private combo = 0; private comboT = 0; private bestCombo = 0; private score = 0; private frenzyT = 0; private milestone = 0;
   private burnTick = 0;
+  private fresh: AchDef[] = [];
   private ev: unknown[][] = [];
   private snapAt = 0; private seq = 0;
   private tele: Tele[] = [];
@@ -219,6 +223,7 @@ export class GameScene extends Phaser.Scene {
       this.players.forEach((p, i) => { p.x = (this.map!.start.x + 0.5) * TILE + i * 30; p.y = (this.map!.start.y + 0.5) * TILE; p.img.setPosition(p.x, p.y); });
     }
     this.hud.setItems(this.me.levels);
+    sfx.musicStart();
 
     this.trailG = this.add.graphics().setDepth(7);
     this.fxG = this.add.graphics().setDepth(8);
@@ -234,6 +239,7 @@ export class GameScene extends Phaser.Scene {
       this.scale.off('resize', this.applyZoom, this);
       document.removeEventListener('visibilitychange', onVis);
       this.hud.setJoystick(null); this.hud.setBoss(null); this.hud.closeModals();
+      sfx.musicStop();
       if (session.onMsg === this.onNet) { session.onMsg = null; session.onClose = null; }
     });
 
@@ -259,14 +265,15 @@ export class GameScene extends Phaser.Scene {
 
   private makePlayer(idx: number, remote: boolean): Player {
     const levels: Levels = {};
-    const meta = metaBonus(remote ? {} : loadMeta().lv);
+    const saved = loadMeta();
+    const meta = remote ? metaBonus({}) : metaBonus(saved.lv, saved.blade);
     const stats = computeStats(levels, meta);
     const x = idx * 40, y = 0;
     return {
       idx, remote, x, y, lvl: 0, img: this.add.image(x, y, idx === 0 ? 'player' : 'player2').setScale(1 / S).setDepth(5).setOrigin(22 / 46, 0.5),
-      hp: stats.maxHp, inv: 0, hurtT: 0, moving: 0, bob: 0, rot: 0, energy: stats.energyMax, levels, stats,
+      hp: stats.maxHp, inv: 0, hurtT: 0, moving: 0, bob: 0, rot: 0, levels, stats,
       alive: true, downT: 0, phoenixUsed: false, bellCd: 0, grenadeT: 0, boomCd: 0, crossCd: 0,
-      boneImgs: [], boneAngle: 0, auraTick: 0, killsForHeal: 0, onToxic: false, toxicTick: 0, runeAt: -99,
+      boneImgs: [], boneAngle: 0, auraTick: 0, killsForHeal: 0, onToxic: false, toxicTick: 0,
       noise: 0, running: false, meta, unlocked: remote ? new Set() : unlockedSet(),
       rerolls: 2 + meta.rerolls, synSeen: new Set(), vortexCd: 0, spearCd: 0, waveCd: 0,
       field: new FlowField(), fTx: 1e9, fTy: 1e9, fAt: -1,
@@ -277,7 +284,7 @@ export class GameScene extends Phaser.Scene {
 
   private resetState() {
     this.xp = 0; this.level = 1; this.pendingLevels = 0; this.kills = 0;
-    this.elapsed = 0; this.spawnAcc = 0; this.nextHorde = 45; this.hordeN = 0;
+    this.elapsed = 0; this.spawnAcc = 14; this.nextHorde = 45; this.hordeN = 0;
     this.bossCount = 0; this.hitstop = 0;
     this.pauseMode = ''; this.over = false;
     this.fieldDirty = true; this.chunkAt = -1;
@@ -290,19 +297,20 @@ export class GameScene extends Phaser.Scene {
     this.objIdx = 0; this.objProg = 0; this.bossKills = 0; this.holdTick = 0;
     this.falls = 0; this.rec = { kills: 0, bosses: 0, falls: 0 }; this.lifeAt = 0;
     this.combo = 0; this.comboT = 0; this.bestCombo = 0; this.score = 0; this.frenzyT = 0; this.milestone = 0;
+    this.fresh = [];
     this.props = []; this.packSeq = 0; this.packSpeed.clear(); this.packC.clear();
     this.chronoUntil = 0; this.barrelSpawnT = 4; this.markPulse = 0;
   }
 
   private applyZoom() {
     const w = window.innerWidth, h = window.innerHeight;
-    this.worldZoom = Phaser.Math.Clamp(Math.min(w, h) / 640, 0.65, 1.35);
+    this.worldZoom = worldZoomFor(w, h);
     this.cameras.main.setZoom(this.worldZoom * this.dpr);
     this.chunkAt = -1;
   }
 
   private get dmgScale() { return (this.map ? 1 + this.progress * 0.5 : 1 + this.elapsed / 330) * this.stage.dmgMul; }
-  private get hpScale() { return (this.map ? 1 + this.progress * 1.6 + this.elapsed / 600 : 1 + this.elapsed / 150) * this.stage.hpMul * (this.players.length > 1 ? 1.15 : 1); }
+  private get hpScale() { return (this.map ? 1 + this.progress * 1.6 + this.elapsed / 600 : 1 + this.elapsed / 200) * this.stage.hpMul * (this.players.length > 1 ? 1.15 : 1); }
   private alivePlayers() { return this.players.filter((p) => p.alive); }
 
   // ---------- Реплицируемые эффекты (локально + событие гостю) ----------
@@ -336,6 +344,7 @@ export class GameScene extends Phaser.Scene {
       id: ++this.strokeSeq, owner, pts: [{ x, y }], hit: new Map(), tiles: new Set(), kills: 0, blasts: 0,
       lastSX: sx, lastSY: sy, lastT: performance.now(), segs: [], loopStart: 0, cssLen: 0, sounded: false,
       charged: false, minePx: 0, lastDir: null, mhit: new Map(), pid, beatChecked: false, beat: false, trapped: false,
+      left: owner.stats.strokeLen, dulled: false,
     };
   }
 
@@ -396,11 +405,11 @@ export class GameScene extends Phaser.Scene {
     const prev = s.pts[s.pts.length - 1];
     let kind: Seg['kind'] = 'dull';
     if (speed >= SWIPE_MIN_SPEED) {
-      const cost = d * SWIPE_COST * st.costMul;
-      if (pl.energy >= cost) { pl.energy -= cost; kind = 'blade'; }
-      // Кровавый пакт: без энергии платим здоровьем
-      else if (st.pactDmg > 0 && pl.hp > 8) { if (!this.god) pl.hp -= cost * 0.3; kind = 'blade'; if (Math.random() < 0.3) this.vfx.burst('gore', 1, wx, wy); }
-      else if (pl === this.me) this.hud.energyEmpty();
+      // Клинок режет, пока у взмаха есть длина; оторвал палец — снова острый. «Безумие» снимает предел.
+      if (s.left > 0 || this.frenzyT > 0 || this.infEnergy) { s.left -= d; kind = 'blade'; }
+      // Кровавый пакт: затупившийся взмах режет за счёт здоровья
+      else if (st.pactDmg > 0 && pl.hp > 8) { if (!this.god) pl.hp -= d * 0.012; kind = 'blade'; if (Math.random() < 0.3) this.vfx.burst('gore', 1, wx, wy); }
+      else if (!s.dulled) { s.dulled = true; if (pl === this.me) sfx.play('dull'); }
     }
     if (kind === 'blade' && !s.beatChecked) {
       s.beatChecked = true;
@@ -414,10 +423,13 @@ export class GameScene extends Phaser.Scene {
         this.snd('level', 0.35, wx, wy, 1.6);
       }
     }
-    const width = kind === 'blade' ? st.bladeWidth * (s.charged ? 1.5 : 1) * (this.frenzyT > 0 ? 1.4 : 1) * (s.beat ? 1.35 : 1) : 4;
-    const seg: Seg = { x1: prev.x, y1: prev.y, x2: wx, y2: wy, born: this.elapsed, kind, width, sid: s.id, remote: pl.remote };
+    // к концу взмаха след сужается — видно, что клинок вот-вот затупится
+    const edge = this.frenzyT > 0 ? 1 : 0.6 + 0.4 * Phaser.Math.Clamp(s.left / (st.strokeLen * 0.3), 0, 1);
+    const width = kind === 'blade' ? st.bladeWidth * edge * (s.charged ? 1.5 : 1) * (this.frenzyT > 0 ? 1.4 : 1) * (s.beat ? 1.35 : 1) : 4;
+    const color = bladeColor(pl.meta.blade);
+    const seg: Seg = { x1: prev.x, y1: prev.y, x2: wx, y2: wy, born: this.elapsed, kind, width, sid: s.id, remote: pl.remote, color };
     this.segs.push(seg);
-    if (!pl.remote) this.E('g', seg.x1 | 0, seg.y1 | 0, seg.x2 | 0, seg.y2 | 0, kind === 'blade' ? 0 : 1, seg.width);
+    if (!pl.remote) this.E('g', seg.x1 | 0, seg.y1 | 0, seg.x2 | 0, seg.y2 | 0, kind === 'blade' ? 0 : 1, seg.width, color);
     if (kind === 'blade') {
       if (!s.sounded) {
         s.sounded = true;
@@ -471,7 +483,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
     s.pts.push({ x: wx, y: wy });
-    this.checkRune(s);
+    this.checkLoop(s);
     return kind;
   }
 
@@ -617,9 +629,9 @@ export class GameScene extends Phaser.Scene {
       case 'meta': {
         // бонусы Мастерской гостя
         const was = p2.stats.maxHp;
-        p2.meta = metaBonus(m.lv ?? {});
+        p2.meta = metaBonus(m.lv ?? {}, typeof m.blade === 'string' ? m.blade : 'cleaver');
         p2.stats = computeStats(p2.levels, p2.meta);
-        p2.hp += p2.stats.maxHp - was; p2.energy = p2.stats.energyMax;
+        p2.hp += p2.stats.maxHp - was;
         p2.rerolls = 2 + p2.meta.rerolls;
         p2.unlocked = m.unl === null ? null : new Set(m.unl ?? []);
         break;
@@ -663,7 +675,7 @@ export class GameScene extends Phaser.Scene {
     for (const b of this.props) if (!b.dead && Math.abs(b.x - p2.x) < R && Math.abs(b.y - p2.y) < R) w.proj(b.x, b.y, b.vx, b.vy, b.kind === 5 && b.fuse >= 0 ? 10 : b.kind);
     for (const b of this.booms) if (!b.dead) w.boom(b.x, b.y, b.img.rotation);
     const pl = this.players.map((p) => [
-      Math.round(p.x), Math.round(p.y), p.lvl, +p.rot.toFixed(2), Math.ceil(p.hp), p.stats.maxHp, Math.round(p.energy), p.stats.energyMax,
+      Math.round(p.x), Math.round(p.y), p.lvl, +p.rot.toFixed(2), Math.ceil(p.hp), p.stats.maxHp, 0, 1,
       p.alive ? 1 : 0, +p.downT.toFixed(2), p.inv > 0 ? +p.inv.toFixed(2) : 0, p.hurtT > 0 ? 1 : 0, p.onToxic ? 1 : 0,
       p.stats.auraRadius, p.stats.bones, +p.boneAngle.toFixed(2), +(p.img.scaleX * S).toFixed(3),
     ]);
@@ -690,7 +702,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private requestPause() {
-    if (this.over || this.pauseMode === 'levelup' || this.pauseMode === 'cd') return;
+    if (this.over || this.pauseMode === 'levelup' || this.pauseMode === 'cd' || this.pauseMode === 'chest') return;
     if (this.pauseMode === 'user') { this.resumeRequested(); return; }
     if (!this.coop) { this.setPause('user'); return; }
     if (this.pauseReqPending) return;
@@ -753,7 +765,7 @@ export class GameScene extends Phaser.Scene {
       const last = hit.get(z);
       // крупных можно «пилить» одним свайпом, мелких — один удар за свайп
       if (last !== undefined && (!z.heavy || this.elapsed - last < 0.12)) continue;
-      if (distToSeg(z.x, z.y, seg.x1, seg.y1, seg.x2, seg.y2) > hw + z.r) continue;
+      if (distToSeg(z.x, z.y, seg.x1, seg.y1, seg.x2, seg.y2) > hw + z.r + HIT_ASSIST) continue;
       hit.set(z, this.elapsed);
       if (z.shield > 0 && pierce) { z.shield = 0; z.img.setTexture('shield_broken'); }
       if (z.shield > 0) {
@@ -769,10 +781,10 @@ export class GameScene extends Phaser.Scene {
       this.burst('gore', z.heavy ? 5 : 3, z.x, z.y);
       this.snd('hit', 0.8, z.x, z.y);
       const pitch = 1 + 0.07 * Math.min(14, stroke?.kills ?? 0);
-      let d = dmg;
+      let d = dmg, crit = !!stroke && (stroke.charged || stroke.beat);
       // Контрудар: бьём в момент атаки
       if (st.parryMul > 0 && (['windup', 'dash', 'charge', 'fuse', 'slam'].includes(z.state))) {
-        d *= st.parryMul;
+        d *= st.parryMul; crit = true;
         if (!z.boss) { z.state = 'walk'; z.stunT = st.parryStun; z.cd1 = Math.max(z.cd1, 1.5); }
         this.text(z.x, z.y - 24, 'КОНТРУДАР', '#74c0fc', 18);
         this.ring(z.x, z.y, z.r + 22, 0x74c0fc, 0.3, 4);
@@ -780,7 +792,7 @@ export class GameScene extends Phaser.Scene {
       }
       // Казнь / Приговор
       if (!z.boss && ((st.execute > 0 && (z.hp - d) / z.maxHp <= st.execute) || (st.syn.deadeye && z.marked))) {
-        if (z.hp > d) { this.burst('gore', 10, z.x, z.y); pl.energy = Math.min(st.energyMax, pl.energy + 1); }
+        if (z.hp > d) this.burst('gore', 10, z.x, z.y);
         d = Math.max(d, z.hp + 1);
       }
       // Трещина: каждый третий удар раскалывает
@@ -790,10 +802,15 @@ export class GameScene extends Phaser.Scene {
         this.timers.push({ at: this.elapsed + 0.02, fn: () => this.blast(zx, zy, 70 + 8 * (pl.levels.crack ?? 0), sd, 0x99e9f2, 240, true) });
         this.burst('spark', 10, zx, zy);
       }
-      if (this.damage(z, d, ang, BLADE_KNOCK * st.knockMul * (st.pinsDmg > 0 ? 1.25 : 1), true, pitch)) {
-        if (pl.stats.bloodEnergy) pl.energy = Math.min(pl.stats.energyMax, pl.energy + pl.stats.bloodEnergy);
+      const heavy = z.heavy, zx = z.x, zy = z.y;
+      if (!this.damage(z, d, ang, BLADE_KNOCK * st.knockMul * st.knockBase * (st.pinsDmg > 0 ? 1.25 : 1), true, pitch)) this.dmgNum(zx, zy - z.r, d, crit);
+      else {
+        // отдача: короткий стоп-кадр на каждое убийство клинком, длиннее — на серию и на крупных
+        this.hitstop = Math.max(this.hitstop, heavy ? 0.07 : stroke && stroke.kills >= 2 ? 0.032 : 0.018);
         if (!stroke) continue;
         stroke.kills++;
+        stroke.left += st.strokeRefund;
+        if (stroke.kills === 3 || stroke.kills === 6 || stroke.kills === 10) this.shake(70, 0.0025 + stroke.kills * 0.0004);
         if (Math.random() < pl.stats.chainChance) this.chain(z, pl);
         if (stroke.kills >= (stroke.blasts + 1) * pl.stats.comboThreshold) {
           stroke.blasts++;
@@ -812,7 +829,7 @@ export class GameScene extends Phaser.Scene {
       if (p.dead || p.friendly || distToSeg(p.x, p.y, seg.x1, seg.y1, seg.x2, seg.y2) >= hw + 10) continue;
       this.burst('spark', 8, p.x, p.y);
       this.snd('slice', 1, p.x, p.y);
-      pl.energy = Math.min(pl.stats.energyMax, pl.energy + 3);
+      if (stroke) stroke.left += 40;
       const target = this.nearestZombie(p.x, p.y, 450);
       if (pl.stats.reflectDmg > 0 && target) {
         const a = Math.atan2(target.y - p.y, target.x - p.x);
@@ -933,52 +950,58 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private checkRune(s: Stroke) {
-    if (s.owner.stats.runeMult <= 0 && s.owner.stats.lassoDmg <= 0) return; // печать/аркан — только после апгрейда
+  /** Замкнутая петля: вся добыча внутри летит к герою. С «Арканом» петля ещё и стягивает зомби. */
+  private checkLoop(s: Stroke) {
     const pts = s.pts;
     const n = pts.length;
-    if (n > 400 || n - s.loopStart < 10) return;
+    if (n > 400 || n - s.loopStart < 9) return;
     const P = pts[n - 1];
-    for (let i = s.loopStart; i < n - 8; i++) {
-      if ((pts[i].x - P.x) ** 2 + (pts[i].y - P.y) ** 2 > 40 * 40) continue;
+    for (let i = s.loopStart; i < n - 7; i++) {
+      if ((pts[i].x - P.x) ** 2 + (pts[i].y - P.y) ** 2 > 46 * 46) continue;
       const poly = pts.slice(i);
-      if (polyArea(poly) < 3500) continue;
+      if (polyArea(poly) < 3000) continue;
       s.loopStart = n;
       const pl = s.owner;
-      if (pl.stats.lassoDmg > 0 && this.elapsed - pl.lassoAt >= pl.stats.lassoCd) { pl.lassoAt = this.elapsed; this.castLasso(poly, pl); }
-      if (pl.stats.runeMult <= 0) return;
-      if (this.elapsed - pl.runeAt < pl.stats.runeCd) { if (pl === this.me) this.hud.toast('Печать перезаряжается', 700); return; }
-      const cost = RUNE_COST * pl.stats.costMul;
-      if (pl.energy < cost) { if (pl === this.me) this.hud.energyEmpty(); return; }
-      pl.energy -= cost;
-      pl.runeAt = this.elapsed;
-      this.castRune(poly, pl);
+      const got = this.harvest(poly, pl);
+      const lasso = pl.stats.lassoDmg > 0 && this.elapsed - pl.lassoAt >= pl.stats.lassoCd;
+      if (lasso) { pl.lassoAt = this.elapsed; this.castLasso(poly, pl); }
+      else if (got) this.showPoly(poly, 0x74c0fc);
       return;
     }
   }
 
-  private castRune(poly: { x: number; y: number }[], pl: Player) {
+  /** Сбор добычи петлёй. Большой улов — бонус опыта. @returns сколько собрано */
+  private harvest(poly: { x: number; y: number }[], pl: Player) {
     let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
     for (const p of poly) { x1 = Math.min(x1, p.x); y1 = Math.min(y1, p.y); x2 = Math.max(x2, p.x); y2 = Math.max(y2, p.y); }
-    const dmg = pl.stats.bladeDamage * pl.stats.runeMult;
-    let caught = 0;
-    for (const z of this.queryRect(x1, y1, x2, y2)) {
-      if (z.dead || !pointInPoly(z.x, z.y, poly)) continue;
-      caught++;
-      this.slow(z, pl);
-      if (z.shield > 0) { z.shield = 0; z.img.setTexture('shield_broken'); }
-      this.damage(z, dmg);
+    const got: Gem[] = [];
+    for (const g of this.gems) {
+      if (g.to || g.x < x1 || g.x > x2 || g.y < y1 || g.y > y2 || !pointInPoly(g.x, g.y, poly)) continue;
+      got.push(g);
     }
-    this.snd('rune', 1, (x1 + x2) / 2, (y1 + y2) / 2);
-    if (pl.stats.syn.doublerune && !(poly as { again?: boolean }).again) {
-      const again = Object.assign(poly.slice(), { again: true });
-      this.timers.push({ at: this.elapsed + 0.5, fn: () => this.castRune(again, pl) });
-    }
-    this.vfx.poly(this.elapsed, poly, 0xb197fc);
+    if (!got.length) return 0;
+    const big = got.length >= 8;
+    const boost = 1.2 + 0.5 * (pl.levels.magnet ?? 0);
+    for (const g of got) { g.pulled = true; g.to = pl; g.t = Math.max(g.t, boost * 2); if (big && !g.chest && !g.heal) g.value *= 1.15; }
+    const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+    this.snd('loop', 1, cx, cy, 1 + Math.min(0.5, got.length * 0.02));
+    if (big) this.text(cx, cy, `ЖАТВА ×${got.length}`, '#a5d8ff', got.length >= 20 ? 28 : 22);
+    return got.length;
+  }
+
+  private showPoly(poly: { x: number; y: number }[], color: number) {
+    this.vfx.poly(this.elapsed, poly, color);
     const step = Math.max(1, Math.floor(poly.length / 40));
-    this.E('P', poly.filter((_, i) => i % step === 0).flatMap((p) => [p.x | 0, p.y | 0]));
-    for (let i = 0; i < poly.length; i += 3) this.vfx.burst('magic', 1, poly[i].x, poly[i].y);
-    if (caught >= 5) this.text((x1 + x2) / 2, (y1 + y2) / 2, `ПЕЧАТЬ x${caught}`, '#d0bfff', 24);
+    this.E('P', poly.filter((_, i) => i % step === 0).flatMap((p) => [p.x | 0, p.y | 0]), color);
+  }
+
+  /** Цифра урона над выжившим врагом (не чаще, чем успевает читаться). */
+  private dmgNum(x: number, y: number, d: number, crit: boolean) {
+    if (this.elapsed - this.numAt < 0.045 && !crit) return;
+    this.numAt = this.elapsed;
+    const v = d >= 10 ? Math.round(d) : Math.round(d * 10) / 10;
+    this.vfx.num(x + (Math.random() - 0.5) * 14, y - 6, String(v), crit);
+    this.E('n', x | 0, y | 0, v, crit ? 1 : 0);
   }
 
   // ---------- Физика предметов: бочки, тотемы, капканы ----------
@@ -1230,9 +1253,7 @@ export class GameScene extends Phaser.Scene {
       }
       this.damage(z, st.lassoDmg + st.bladeDamage * 0.3);
     }
-    this.vfx.poly(this.elapsed, poly, 0x8ce99a);
-    const step = Math.max(1, Math.floor(poly.length / 40));
-    this.E('P', poly.filter((_, i) => i % step === 0).flatMap((p) => [p.x | 0, p.y | 0]));
+    this.showPoly(poly, 0x8ce99a);
     this.ring(cx, cy, 40, 0x8ce99a, 0.4, 5);
     this.snd('throw', 1, cx, cy, 0.6);
     if (st.syn.funnel) this.addVortex(cx, cy, pl);
@@ -1333,7 +1354,7 @@ export class GameScene extends Phaser.Scene {
     const sc = (chest || heal ? 1 : value >= 5 ? 1.5 : 1) / S;
     if (!chest && !heal && value >= 5) img.setTint(0xb197fc);
     this.tweens.add({ targets: img, scale: sc, duration: 220, ease: 'Back.easeOut' });
-    this.gems.push({ x, y, value, chest, heal, img, pulled: false, t: Math.random() * 6 });
+    this.gems.push({ x, y, value, chest, heal, img, pulled: false, t: Math.random(), to: null });
   }
 
   private nearestPlayer(x: number, y: number, aliveOnly = false) {
@@ -1358,7 +1379,7 @@ export class GameScene extends Phaser.Scene {
     }
     p.hp -= amount;
     // удар по герою срезает серию вдвое
-    if (this.combo >= 4) { this.combo = Math.floor(this.combo / 2); this.toast(`💢 Комбо сбито: ${this.combo}`, 900); }
+    if (this.combo >= 4) { this.combo = Math.floor(this.combo / 2); this.toast(`Комбо сбито: ${this.combo}`, 900); }
     p.inv = 0.6; p.hurtT = 0.25;
     this.burst('gore', 6, p.x, p.y);
     if (p === this.me) {
@@ -1406,7 +1427,7 @@ export class GameScene extends Phaser.Scene {
     const pos = this.findSpawn(around, opts.extra, opts.at, opts.angle, undefined, opts.exact);
     if (!pos) return null;
     const img = this.add.image(pos.x, pos.y, type).setOrigin(zOrigin(type), 0.5).setDepth(d.boss ? 4.5 : 4).setScale(0);
-    const hp = d.hp * this.hpScale * (d.boss ? (1 + 0.5 * this.bossCount) * (opts.final ? 2.5 : 1) * (this.players.length > 1 ? 1.4 : 1) : 1);
+    const hp = d.hp * (d.fodder ? 1 : this.hpScale) * (d.boss ? (1 + 0.5 * this.bossCount) * (opts.final ? 2.5 : 1) * (this.players.length > 1 ? 1.4 : 1) : 1);
     const z: Zombie = {
       id: this.zid++ & 0xffff, type, x: pos.x, y: pos.y, lvl: pos.lvl, hp, maxHp: hp, speed: d.speed * (0.9 + Math.random() * 0.2), r: ZLOOK[type].r,
       dmg: d.dmg, xp: d.xp, img, flash: 0, slowUntil: 0, slowMul: 1, boneCd: 0, dead: false,
@@ -1452,7 +1473,8 @@ export class GameScene extends Phaser.Scene {
     if (inWave > waveLen - 8 && this.wave < WAVES) return; // передышка
     const coopMul = this.players.length > 1 ? 1.4 : 1;
     const w = this.wave;
-    const rate = Math.min(18 * coopMul, (0.7 + w * 0.7 + (w * w) * 0.1) * this.stage.rateMul * coopMul);
+    // с первой секунды на экране есть кого резать; дальше сложность растёт числом, а не «жиром»
+    const rate = Math.min(34 * coopMul, (1.6 + w * 1.6 + (w * w) * 0.17) * this.stage.rateMul * coopMul);
     this.spawnAcc += rate * dt;
     // стаями по 5–10: идут кучкой одним темпом
     while (this.spawnAcc >= 8) {
@@ -1563,7 +1585,6 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.moveLocal(dt);
-    if (this.infEnergy) for (const p of this.players) p.energy = p.stats.energyMax;
     for (const p of this.players) this.tickPlayer(p, dt);
     for (const p of this.players) this.updateField(p);
     this.fieldDirty = false;
@@ -1694,7 +1715,6 @@ export class GameScene extends Phaser.Scene {
   private tickPlayer(p: Player, dt: number) {
     // шум в клетках: бег 40, шаг 10, стоя 3 (резкий свайп добавляет)
     p.noise = !p.alive ? 0 : p.running ? 40 : p.moving > 0.1 ? 10 : 3;
-    if (p.alive) p.energy = Math.min(p.stats.energyMax, p.energy + p.stats.energyRegen * dt * (this.frenzyT > 0 ? 3 : 1));
     p.onToxic = p.alive && this.world.kindAtPx(p.x, p.y) === K_TOXIC;
     if (p.onToxic) {
       if (!this.god) p.hp -= 6 * this.stage.dmgMul * dt;
@@ -2266,7 +2286,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
     // Хронос
-    if (s.chronoDur > 0 && this.combo >= 20 && p.chronoAt <= this.elapsed) {
+    if (s.chronoDur > 0 && this.combo >= 40 && p.chronoAt <= this.elapsed) {
       p.chronoAt = this.elapsed + s.chronoCd;
       this.chronoUntil = this.elapsed + s.chronoDur;
       this.toast('⏳ Время замерло', 1200);
@@ -2352,11 +2372,11 @@ export class GameScene extends Phaser.Scene {
       }
       if (best) g.pulled = true;
       g.t += dt;
-      const p = best ?? (g.pulled && alive.length ? this.nearestPlayer(g.x, g.y, true) : null);
+      const p = (g.to?.alive ? g.to : null) ?? best ?? (g.pulled && alive.length ? this.nearestPlayer(g.x, g.y, true) : null);
       if (!p) { g.img.setPosition(g.x, g.y + Math.sin(g.t * 4) * 2.5); continue; }
       const dx = p.x - g.x, dy = p.y - g.y, d = Math.hypot(dx, dy);
       if (g.pulled) {
-        const sp = (380 + g.t * 200) * dt;
+        const sp = (g.to ? 620 : 380) * (1 + g.t * 0.5) * dt;
         g.x += (dx / (d || 1)) * Math.min(sp, d); g.y += (dy / (d || 1)) * Math.min(sp, d);
       }
       g.img.setPosition(g.x, g.y + (g.pulled ? 0 : Math.sin(g.t * 4) * 2.5));
@@ -2387,7 +2407,7 @@ export class GameScene extends Phaser.Scene {
     while (this.xp >= this.xpNext()) { this.xp -= this.xpNext(); this.level++; this.pendingLevels++; }
   }
 
-  private xpNext() { return Math.floor((5 + this.level * 3.5 + Math.pow(this.level, 1.6)) * (this.players.length > 1 ? 1.5 : 1)); }
+  private xpNext() { return Math.floor((4 + this.level * 2.5 + Math.pow(this.level, 1.75)) * (this.players.length > 1 ? 1.5 : 1)); }
 
   private openChest(p: Player) {
     const pool = offerPool(p.levels, 'trinket', p.unlocked);
@@ -2395,7 +2415,12 @@ export class GameScene extends Phaser.Scene {
     if (!pool.length) { p.hp = Math.min(p.stats.maxHp, p.hp + 30); this.toast(`📦 ${who}+30 HP`); return; }
     const u = pool[Math.floor(Math.random() * pool.length)];
     this.applyUpgrade(p, u.id);
-    this.toast(`📦 ${who}${u.icon} ${u.name} (ур. ${p.levels[u.id]})`);
+    // соло: сундук — маленькая церемония с паузой; в коопе мир не останавливаем
+    if (p === this.me && !this.coop && (this.pauseMode === '' || this.pauseMode === 'chest')) {
+      this.pauseMode = 'chest';
+      this.endLocalStrokes(); this.controls?.reset();
+      this.hud.showChest(u, p.levels[u.id], () => { if (this.pauseMode === 'chest') this.pauseMode = ''; });
+    } else this.toast(`📦 ${who}${u.icon} ${u.name} (ур. ${p.levels[u.id]})`);
   }
 
   private applyUpgrade(p: Player, id: string) {
@@ -2403,13 +2428,13 @@ export class GameScene extends Phaser.Scene {
     p.levels[id] = (p.levels[id] ?? 0) + 1;
     p.stats = computeStats(p.levels, p.meta);
     p.hp += p.stats.maxHp - oldMax;
-    p.energy = Math.min(p.energy, p.stats.energyMax);
     if (p === this.me) this.hud.setItems(p.levels);
     for (const sy of SYNERGIES) {
       if (!p.stats.syn[sy.id] || p.synSeen.has(sy.id)) continue;
       p.synSeen.add(sy.id);
       const who = this.players.length > 1 ? (p.idx === 0 ? 'Игрок 1: ' : 'Игрок 2: ') : '';
-      this.toast(`🔗 ${who}синергия «${sy.name}» ${sy.icon}`, 2600);
+      if (p === this.me) { this.hud.showEvolution(sy); this.E('t', `🔗 ${who}связка «${sy.name}» ${sy.icon}`, 2600); }
+      else this.toast(`🔗 ${who}связка «${sy.name}» ${sy.icon}`, 2600);
       this.snd('synergy', 1, p.x, p.y);
       this.burst('magic', 40, p.x, p.y);
       this.ring(p.x, p.y, 160, 0xffd43b, 0.6, 6);
@@ -2473,7 +2498,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Кости 🦴 за забег (для Мастерской). */
   private bonesEarned(win: boolean) {
-    const base = Math.floor(this.kills / 10) + this.bossKills * 25 + (this.map ? this.objIdx * 30 : this.wave * 8);
+    const base = Math.floor(this.kills / 10) + Math.floor(this.elapsed / 10) + this.bossKills * 25 + (this.map ? this.objIdx * 30 : this.wave * 8);
     return base + (win ? 80 : 0);
   }
 
@@ -2491,14 +2516,15 @@ export class GameScene extends Phaser.Scene {
     if (final && win && this.map) { max.chapter = this.chapter + 1; if (this.chapter === 0) max.bestCh1 = Math.floor(this.elapsed); }
     for (const a of recordLife(d, max)) {
       const extra = a.unlock?.length ? ` — открыт предмет` : '';
-      this.hud.toast(`🏆 Ачивка «${a.name}»${extra}`, 2600);
-      sfx.play('synergy');
+      // в конце забега новое показывает экран итогов, тост был бы под ним
+      if (final) this.fresh.push(a); else { this.hud.toast(`Ачивка «${a.name}»${extra}`, 2600); sfx.play('synergy'); }
     }
   }
 
   private endRun(win = false) {
     this.flushLife(true, win);
     this.over = true;
+    sfx.musicStop();
     this.endLocalStrokes(); this.controls?.reset();
     this.hud.setBoss(null); this.hud.setJoystick(null); this.hud.closeModals(); this.hud.showWait(null);
     const prog = loadProgress();
@@ -2508,12 +2534,16 @@ export class GameScene extends Phaser.Scene {
 
   private summary(win = false) {
     const bones = this.bonesEarned(win);
-    return this.summaryText() + `<br>🦴 +${bones} костей для Мастерской`;
+    const got = this.fresh.map((a) => {
+      const ul = a.unlock?.map((id) => UPGRADES.find((u) => u.id === id)).filter(Boolean).map((u) => `${u!.icon} ${u!.name}`).join(', ');
+      return `<div class="unlocked"><small>${ul ? 'Открыт предмет' : 'Ачивка'}</small><b>${ul ?? a.name}</b> — ${a.desc}</div>`;
+    }).join('');
+    return this.summaryText() + `<div class="bonesline">+${bones} <i>костей в Мастерскую</i></div>` + got + goalsHtml();
   }
 
   private summaryText() {
     const head = this.map ? `Время <b>${fmt(this.elapsed)}</b>` : `Волна <b>${this.wave}/${WAVES}</b> · <b>${fmt(this.elapsed)}</b>`;
-    return `<span class="bigscore">${this.score.toLocaleString('ru-RU')}</span><br>${head} · Убито: <b>${this.kills}</b> · Лучшее комбо: <b>${this.bestCombo}</b>`;
+    return `<span class="bigscore">${this.score.toLocaleString('ru-RU')}</span><div class="runstats"><span>${head}</span><span>Убито <b>${this.kills}</b></span><span>Комбо <b>${this.bestCombo}</b></span><span>Уровень <b>${this.level}</b></span></div>`;
   }
 
   private gameOver() {
@@ -2583,12 +2613,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ---------- Комбо ----------
-  /** Множитель счёта: +0.1 за каждые 10 в серии, до ×4. */
-  private get comboMul() { return Math.min(4, 1 + Math.floor(this.combo / 10) * 0.1); }
-  private comboXp() { return 1 + Math.min(this.combo, 100) / 100; }
+  /** Множитель счёта: +0.1 за каждые 20 в серии, до ×4. */
+  private get comboMul() { return Math.min(4, 1 + Math.floor(this.combo / 20) * 0.1); }
+  private comboXp() { return 1 + Math.min(this.combo, 200) / 400; }
   /** Урон клинка: +0.4% за каждое убийство в серии (до +40%), «Азарт» удваивает. */
-  private comboDmg(st: Stats) { return 1 + Math.min(0.4, this.combo * 0.004) * (1 + st.frenzyDmg); }
-  private comboWindow() { return 2.2 + Math.max(...this.players.map((p) => p.stats.comboTime)); }
+  private comboDmg(st: Stats) { return 1 + Math.min(0.4, this.combo * 0.002) * (1 + st.frenzyDmg); }
+  private comboWindow() { return 1.8 + Math.max(...this.players.map((p) => p.stats.comboTime)); }
 
   private addCombo(z: Zombie) {
     this.combo++;
@@ -2596,27 +2626,24 @@ export class GameScene extends Phaser.Scene {
     if (this.combo > this.bestCombo) this.bestCombo = this.combo;
     const base = z.boss ? 500 : 10 + z.xp * 10;
     this.score += Math.round(base * this.comboMul);
-    for (const p of this.alivePlayers()) {
-      if (p.stats.frenzyDmg > 0) p.energy = Math.min(p.stats.energyMax, p.energy + 0.6 * p.stats.frenzyDmg);
-    }
-    if (this.combo >= 30 && Math.random() < 0.008) this.dropGem(z.x, z.y, 0, false, true);
+    if (this.combo >= 40 && Math.random() < 0.005) this.dropGem(z.x, z.y, 0, false, true);
     // рубежи серии
-    const ms = [25, 50, 100, 200, 300].find((m) => this.combo >= m && this.milestone < m);
+    const ms = [40, 80, 160, 300, 500].find((m) => this.combo >= m && this.milestone < m);
     if (ms) { this.milestone = ms; this.comboMilestone(ms); }
   }
 
   private comboMilestone(m: number) {
     this.snd('synergy', 0.9);
     this.shake(200, 0.006);
-    if (m === 25) this.toast('🔥 КОМБО 25 — РАЗОГРЕВ! Волна по врагам', 1800);
-    if (m === 50) this.toast('🩸 КОМБО 50 — СВЕЖАЯ КРОВЬ! +25 HP', 1800);
-    if (m === 100) this.toast('⚡ КОМБО 100 — БЕЗУМИЕ! Энергия ×3, клинок шире', 2200);
-    if (m >= 200) this.toast(`💀 КОМБО ${m} — ЛЕГЕНДА!`, 2200);
+    if (m === 40) this.toast('КОМБО 40 — РАЗОГРЕВ! Волна по врагам', 1800);
+    if (m === 80) this.toast('КОМБО 80 — СВЕЖАЯ КРОВЬ! +25 HP', 1800);
+    if (m === 160) this.toast('КОМБО 160 — БЕЗУМИЕ! Клинок не тупится и шире', 2200);
+    if (m >= 300) this.toast(`КОМБО ${m} — ЛЕГЕНДА!`, 2200);
     for (const p of this.alivePlayers()) {
       this.blast(p.x, p.y, 200 + m * 0.6, 6 + m * 0.15, 0xffd43b, 500);
-      if (m >= 50) { p.hp = Math.min(p.stats.maxHp, p.hp + 25); this.burst('heal', 16, p.x, p.y); }
+      if (m >= 80) { p.hp = Math.min(p.stats.maxHp, p.hp + 25); this.burst('heal', 16, p.x, p.y); }
     }
-    if (m >= 100) this.frenzyT = 6;
+    if (m >= 160) this.frenzyT = 6;
   }
 
   private tickCombo(dt: number) {
@@ -2628,8 +2655,8 @@ export class GameScene extends Phaser.Scene {
     const c = this.combo;
     this.combo = 0; this.milestone = 0;
     if (c < 10) return;
-    this.toast(`Серия ×${c} · +${Math.round(c * 5 * Math.min(4, 1 + Math.floor(c / 10) * 0.1))} очков`, 1300);
-    this.score += Math.round(c * 5 * Math.min(4, 1 + Math.floor(c / 10) * 0.1));
+    this.toast(`Серия ×${c} · +${Math.round(c * 5 * Math.min(4, 1 + Math.floor(c / 20) * 0.1))} очков`, 1300);
+    this.score += Math.round(c * 5 * Math.min(4, 1 + Math.floor(c / 20) * 0.1));
     for (const p of this.alivePlayers()) {
       for (let i = 0; i < Math.min(12, Math.floor(c / 5)); i++) { const a = Math.random() * 6.28; this.dropGem(p.x + Math.cos(a) * 60, p.y + Math.sin(a) * 60, 2, false); }
       if (p.stats.finisher > 0) this.blast(p.x, p.y, 220, c * 0.6 * p.stats.finisher, 0xff6b6b, 700);
@@ -2652,7 +2679,7 @@ export class GameScene extends Phaser.Scene {
     refreshStats();
     return [
       { label: () => `Бессмертие`, fn: () => { this.god = !this.god; }, on: () => this.god },
-      { label: () => `Энергия ∞`, fn: () => { this.infEnergy = !this.infEnergy; }, on: () => this.infEnergy },
+      { label: () => `Клинок ∞`, fn: () => { this.infEnergy = !this.infEnergy; }, on: () => this.infEnergy },
       { label: 'Лечение', fn: () => { for (const p of this.players) { p.hp = p.stats.maxHp; if (!p.alive) this.revive(p, false); } } },
       { label: () => 'FPS', fn: () => { this.showFps = !this.showFps; if (!this.showFps) this.hud.setFps(null); }, on: () => this.showFps },
       { label: '+1 уровень', fn: () => this.gainXp(this.xpNext() - this.xp + 0.01) },
@@ -2686,7 +2713,7 @@ export class GameScene extends Phaser.Scene {
       if (p.stats.auraRadius > 0 && p.alive) drawAura(tg, p.x, p.y, p.stats.auraRadius, this.elapsed);
       if (!p.alive) drawRevive(tg, p.x, p.y, p.downT, this.elapsed);
     }
-    for (const p of this.players) if (p.alive) drawVitals(this.fxG2, p.x, p.y, p.hp / p.stats.maxHp, p.energy / p.stats.energyMax);
+    for (const p of this.players) if (p.alive) drawVitals(this.fxG2, p.x, p.y, p.hp / p.stats.maxHp);
     for (const b of this.burns) drawBurn(tg, b.x1, b.y1, b.x2, b.y2, b.width, (b.until - this.elapsed) / 0.4);
     const long = this.players.some((p) => p.stats.crossDmg > 0);
     this.segs = this.segs.filter((s) => {
@@ -2725,11 +2752,12 @@ export class GameScene extends Phaser.Scene {
 
     const me = this.me;
     this.hud.update({
-      hp: me.hp, maxHp: me.stats.maxHp, energy: me.energy, energyMax: me.stats.energyMax,
+      hp: me.hp, maxHp: me.stats.maxHp,
       xp: this.xp, xpNext: this.xpNext(), time: this.elapsed, total: this.stageTime, kills: this.kills, level: this.level,
       wave: this.map ? 0 : this.wave,
     });
     this.hud.setScore(this.score, this.combo, this.comboMul, this.combo ? this.comboT / this.comboWindow() : 0, this.frenzyT > 0);
+    sfx.musicMood(this.paused || this.over ? -1 : this.combo, !!boss, this.frenzyT > 0, me.hp / me.stats.maxHp);
   }
 
   /** Текущая цель (сюжет): текст сверху, стрелка у края экрана с расстоянием. */
@@ -2893,13 +2921,18 @@ export function drawBeacon(g: Phaser.GameObjects.Graphics, x: number, y: number,
   g.fillStyle(0xffffff, 0.9).fillTriangle(x, y - 34 - Math.sin(now * 5) * 5, x - 10, y - 52 - Math.sin(now * 5) * 5, x + 10, y - 52 - Math.sin(now * 5) * 5);
 }
 
-/** Полоски здоровья и энергии под героем. */
-export function drawVitals(g: Phaser.GameObjects.Graphics, x: number, y: number, hp: number, en: number) {
-  const w = 44, bx = x - w / 2, by = y + 24;
-  g.fillStyle(0x000000, 0.65).fillRoundedRect(bx - 2, by - 2, w + 4, 13, 4);
-  g.fillStyle(hp > 0.35 ? 0x40c057 : 0xfa5252).fillRoundedRect(bx, by, Math.max(0, w * Math.min(1, hp)), 6, 2);
-  g.fillStyle(0x22b8cf).fillRoundedRect(bx, by + 7, Math.max(0, w * Math.min(1, en)), 3, 1);
+/** Полоска здоровья под героем — видна только когда он ранен. */
+export function drawVitals(g: Phaser.GameObjects.Graphics, x: number, y: number, hp: number) {
+  if (hp >= 0.999) return;
+  const w = 40, bx = x - w / 2, by = y + 24;
+  g.fillStyle(0x000000, 0.65).fillRoundedRect(bx - 2, by - 2, w + 4, 9, 4);
+  g.fillStyle(hp > 0.35 ? 0x40c057 : 0xfa5252).fillRoundedRect(bx, by, Math.max(0, w * Math.min(1, hp)), 5, 2);
 }
+
+/** Камера: на телефоне ближе, чем раньше, чтобы врагов было видно и по ним было легко попасть. */
+export function worldZoomFor(w: number, h: number) { return Phaser.Math.Clamp(Math.min(w, h) / 470, 0.84, 1.45); }
+
+export function bladeColor(id: string) { return BLADES.find((b) => b.id === id)?.color ?? 0x66d9e8; }
 
 export function drawVortex(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number, left: number, now: number) {
   const a = Math.min(1, left * 3);
@@ -2951,6 +2984,16 @@ export function drawBurn(g: Phaser.GameObjects.Graphics, x1: number, y1: number,
   const a = Math.min(1, fade) * (0.5 + Math.random() * 0.15);
   g.lineStyle(w * 0.55, 0xe8590c, a * 0.18).lineBetween(x1, y1, x2, y2);
   g.lineStyle(w * 0.18, 0xffa94d, a * 0.4).lineBetween(x1, y1, x2, y2);
+}
+
+/** Что уже близко: ближайшие ачивки и предметы, которые они открывают. */
+function goalsHtml() {
+  const g = nearestGoals(3);
+  if (!g.length) return '';
+  return `<div class="goals"><div class="goals-h">Скоро откроется</div>${g.map(({ a, cur, goal, k }) => {
+    const ul = a.unlock?.map((id) => UPGRADES.find((u) => u.id === id)).filter(Boolean).map((u) => `${u!.icon} ${u!.name}`).join(', ');
+    return `<div class="goal"><div class="goal-t"><b>${ul ?? a.name}</b><span>${a.desc}</span></div><div class="goal-bar"><i style="width:${Math.round(k * 100)}%"></i></div><em>${cur.toLocaleString('ru-RU')} / ${goal.toLocaleString('ru-RU')}</em></div>`;
+  }).join('')}</div>`;
 }
 
 export function fmt(t: number) { t = Math.floor(t); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; }
