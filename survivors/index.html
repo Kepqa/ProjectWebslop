@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#151a14" />
+  <title>Swipe Survivors</title>
+</head>
+<body>
+  <div id="game"></div>
+
+  <div id="hud" class="hidden">
+    <div class="bars">
+      <div class="bar hp"><div class="fill" id="hp-fill"></div><span id="hp-text"></span></div>
+      <div class="bar energy" id="energy-bar"><div class="fill" id="energy-fill"></div></div>
+    </div>
+    <div class="stats">
+      <span id="time">0:00</span>
+      <span>💀 <b id="kills">0</b></span>
+      <span>Ур. <b id="level">1</b></span>
+      <span id="fps" class="hidden"></span>
+      <button id="dev-btn" class="hudbtn hidden" aria-label="Разработчик">🛠</button>
+      <button id="pause" class="hudbtn" aria-label="Пауза">⏸</button>
+      <button id="mute" class="hudbtn" aria-label="Звук">🔊</button>
+    </div>
+    <div class="items" id="items"></div>
+    <div class="bar xp"><div class="fill" id="xp-fill"></div></div>
+    <div id="scorebox"><div id="score-num">0</div><div id="combo" class="hidden"><span id="combo-txt"></span><div class="cbar"><div id="combo-fill"></div></div></div></div>
+    <div id="boss" class="hidden"><div id="boss-name"></div><div class="bar"><div class="fill" id="boss-fill"></div></div></div>
+    <div id="objective" class="hidden"></div>
+  </div>
+
+  <div id="joy-outer"></div><div id="joy-base"></div><div id="joy-knob"></div>
+  <div id="dev-panel" class="hidden"><div id="dev-stats"></div><div id="dev-buttons"></div></div>
+  <div id="waypoint" class="hidden"></div>
+  <div id="toast"></div>
+  <div id="wait" class="hidden"></div>
+  <div id="countdown" class="hidden"></div>
+
+  <div id="pause-ov" class="overlay hidden">
+    <h2>Пауза</h2>
+    <p id="pause-note"></p>
+    <div id="pause-build" class="buildbox"></div>
+    <div class="vtag" id="pause-version"></div>
+    <div class="end-buttons"><button id="pause-resume">Продолжить</button><button id="pause-exit" class="secondary">Выйти в меню</button></div>
+  </div>
+
+  <div id="vote" class="hidden">
+    <div id="vote-text"></div>
+    <div class="bar"><div class="fill" id="vote-fill"></div></div>
+    <div class="vote-buttons"><button id="vote-yes">Принять</button><button id="vote-no" class="secondary">Отклонить</button></div>
+  </div>
+
+  <div id="levelup" class="overlay hidden">
+    <h2>Новый уровень!</h2>
+    <div class="cards" id="cards"></div>
+    <div class="lu-actions"><button id="lu-reroll" class="secondary small">🎲 Реролл</button><button id="lu-skip" class="secondary small">⏭ Пропустить · +20 HP</button></div>
+    <div id="build"></div>
+  </div>
+
+  <div id="start" class="overlay menu">
+    <a class="hub-back" href="../">← Все игры</a>
+    <h1 id="title">Swipe <br>Survivors</h1>
+    <div id="dev-info" class="hidden"></div>
+    <div class="tips"><span>👆 свайп — удар</span><span>🕹 джойстик слева</span><span>⬆ уровень → предмет</span></div>
+
+    <div id="menu-main" class="modes">
+      <button class="mode" data-go="story"><i>📖</i><b>Сюжет</b><small>4 главы · прорыв</small></button>
+      <button class="mode" data-go="survival"><i>⚔️</i><b>Выживание</b><small>10 волн · боссы</small></button>
+      <button class="mode" data-go="coop"><i>👥</i><b>Кооп</b><small>По сети, по коду</small></button>
+    </div>
+    <div id="menu-sub" class="subrow">
+      <button class="sub" data-go="shop">🦴 Мастерская <small id="bones-small">0</small></button>
+      <button class="sub" data-go="codex">📚 Предметы</button>
+      <button class="sub" data-go="ach">🏆 Ачивки <small id="ach-small"></small></button>
+    </div>
+
+    <div id="menu-codex" class="panel hidden">
+      <div class="panel-title"><button class="back">←</button>Предметы</div>
+      <div id="codex"></div>
+    </div>
+
+    <div id="menu-ach" class="panel hidden">
+      <div class="panel-title"><button class="back">←</button>Ачивки</div>
+      <div class="list" id="achs"></div>
+    </div>
+
+    <div id="menu-shop" class="panel hidden">
+      <div class="panel-title"><button class="back">←</button>Мастерская · <span id="bones">🦴 0</span></div>
+      <div class="list" id="shop"></div>
+    </div>
+
+    <div id="menu-story" class="panel hidden">
+      <div class="panel-title"><button class="back">←</button>Сюжет</div>
+      <div class="list" id="chapters"></div>
+    </div>
+
+    <div id="menu-survival" class="panel hidden">
+      <div class="panel-title"><button class="back">←</button>Выживание</div>
+      <div class="list" id="stages"></div>
+    </div>
+
+    <div id="menu-coop" class="panel hidden">
+      <div class="panel-title"><button class="back">←</button>Кооп</div>
+      <div class="coop">
+        <div class="coop-row" id="coop-idle">
+          <button id="coop-host">Создать комнату</button>
+          <input id="coop-code" maxlength="5" placeholder="КОД" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+          <button id="coop-join" class="secondary">Войти</button>
+        </div>
+        <div id="coop-status" class="hidden"></div>
+        <div class="list hidden" id="coop-choices"></div>
+        <button id="coop-cancel" class="secondary small hidden">Отмена</button>
+      </div>
+    </div>
+
+    <div id="update" class="hidden"></div>
+    <div class="settings">
+      <button id="set-sound" class="chip">🔊 Звук</button>
+      <button id="set-gloomy" class="chip">🌑 Мрачный стиль</button>
+      <button id="set-lefty" class="chip">🤚 Левша</button>
+    </div>
+    <div id="version"></div>
+  </div>
+
+  <div id="end" class="overlay hidden">
+    <h2 id="end-title"></h2>
+    <p id="end-stats"></p>
+    <div class="end-buttons"><button id="end-primary"></button><button id="end-secondary" class="secondary"></button></div>
+  </div>
+
+  <script type="module" src="../src/main.ts"></script>
+</body>
+</html>

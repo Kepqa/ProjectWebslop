@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#120a14" />
+  <title>Дуэль</title>
+</head>
+<body>
+  <canvas id="cv"></canvas>
+
+  <button id="pause" class="hidden" aria-label="Пауза">⏸</button>
+  <div id="rotate" class="hidden">📱↻ Поверни телефон — так удобнее</div>
+
+  <div id="touch" class="hidden">
+    <div class="pad left">
+      <button data-k="jump" class="tb up">▲</button>
+      <button data-k="left" class="tb">◀</button>
+      <button data-k="right" class="tb">▶</button>
+    </div>
+    <div class="pad right">
+      <div class="spells">
+        <button data-k="s1" class="tb sp"><span></span><i></i></button>
+        <button data-k="s2" class="tb sp"><span></span><i></i></button>
+        <button data-k="s3" class="tb sp"><span></span><i></i></button>
+      </div>
+      <div class="acts">
+        <button data-k="dodge" class="tb">💨</button>
+        <button data-k="block" class="tb">🛡️</button>
+        <button data-k="heavy" class="tb big">💥</button>
+        <button data-k="light" class="tb big main">⚔️</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="menu" class="ov">
+    <a class="back" href="../">← Все игры</a>
+    <h1>Дуэль</h1>
+    <p class="sub">Один на один. Блокируй в последний момент — и враг откроется.</p>
+
+    <div class="row" id="modes">
+      <button class="chip on" data-mode="bot">🤖 Против бота</button>
+      <button class="chip" data-mode="pvp">👥 Вдвоём за клавиатурой</button>
+    </div>
+
+    <h3 id="p1-title">Твой боец</h3>
+    <div class="heroes" id="p1"></div>
+    <h3 id="p2-title">Соперник</h3>
+    <div class="heroes" id="p2"></div>
+
+    <div class="row" id="levels"></div>
+
+    <button id="go" class="go">В бой!</button>
+    <div id="record" class="record"></div>
+
+    <details class="help">
+      <summary>Управление и приёмы</summary>
+      <div id="help"></div>
+    </details>
+  </div>
+
+  <div id="paused" class="ov hidden">
+    <h2>Пауза</h2>
+    <button id="resume" class="go">Продолжить</button>
+    <button id="to-menu" class="ghost">В меню</button>
+  </div>
+
+  <div id="over" class="ov hidden">
+    <h2 id="over-title"></h2>
+    <p id="over-sub" class="sub"></p>
+    <button id="again" class="go">Реванш</button>
+    <button id="over-menu" class="ghost">В меню</button>
+  </div>
+
+  <script type="module" src="../src/duel/main.ts"></script>
+</body>
+</html>

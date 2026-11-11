@@ -1,0 +1,21 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #f6f1e7; color: #2b2622; font-family: "Trebuchet MS", system-ui, -apple-system, sans-serif; }
+body { min-height: 100vh; padding: calc(env(safe-area-inset-top) + 28px) 16px 32px; }
+header { text-align: center; max-width: 640px; margin: 0 auto 28px; }
+h1 { font-size: clamp(40px, 9vw, 68px); margin: 0; letter-spacing: -1px; }
+header p { margin: 8px 0 0; font-size: 17px; color: #6b6259; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 20px; max-width: 1040px; margin: 0 auto; }
+.card {
+  position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px 10px 16px; border-radius: 18px;
+  background: #fff; color: inherit; text-decoration: none; box-shadow: 0 2px 0 #0000000f, 0 8px 24px #0000000d;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+a.card:hover { transform: translateY(-4px) rotate(-.4deg); box-shadow: 0 2px 0 #0000000f, 0 14px 30px #0000001c; }
+.card .art { aspect-ratio: 5 / 3; border-radius: 12px; overflow: hidden; background: var(--bg, #e8e1d4); display: grid; place-items: center; }
+.card .art svg { width: 100%; height: 100%; display: block; }
+.card b { font-size: 20px; padding: 4px 6px 0; }
+.card small { font-size: 14px; color: #7a7066; padding: 0 6px; line-height: 1.35; }
+.card .new { position: absolute; top: 18px; right: 18px; background: #ff5d8f; color: #fff; font-style: normal; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 99px; }
+.card.soon { opacity: .55; }
+.card.soon .art span { font-size: 54px; color: #b5aa9b; font-weight: 700; }
+footer { text-align: center; margin-top: 36px; font-size: 12px; color: #a39788; }
