@@ -1,5 +1,6 @@
 import { SLOTS, UPGRADES, activeSynergies, byId, slotOf, slotsUsed, synergiesOf, type Levels, type SynergyDef, type UpgradeDef } from './upgrades';
 import { sfx } from './sfx';
+import { haptic } from './haptics';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -65,7 +66,7 @@ export class Hud {
     $('hud').classList.remove('hidden');
     $('hud').classList.toggle('coop', coop);
     for (const id of ['levelup', 'end', 'chest', 'evo', 'radio']) $(id).classList.add('hidden');
-    clearInterval(this.radioTimer);
+    clearInterval(this.radioTimer); this.setDanger(false);
     this.chestQueue = []; clearTimeout(this.evoTimer);
     this.closeModals();
   }
@@ -109,7 +110,7 @@ export class Hud {
     if (!w || (w.x > m && w.x < W - m && w.y > m + 70 && w.y < H - m)) { el.classList.add('hidden'); return; }
     const cx = W / 2, cy = H / 2, dx = w.x - cx, dy = w.y - cy;
     const k = Math.min((W / 2 - m) / Math.max(1e-6, Math.abs(dx)), (H / 2 - m - 30) / Math.max(1e-6, Math.abs(dy)));
-    const px = cx + dx * k, py = cy + dy * k + 15, ang = Math.atan2(dy, dx);
+    const px = cx + dx * k, py = Math.max(cy + dy * k + 15, 168), ang = Math.atan2(dy, dx); // не налезать на плашку цели
     el.classList.remove('hidden');
     el.style.left = `${px}px`; el.style.top = `${py}px`;
     const st = `${w.icon}|${w.dist}|${ang.toFixed(2)}`;
@@ -223,6 +224,11 @@ export class Hud {
     this.itemsEl.innerHTML = group(blade, SLOTS.blade) + group(trink, SLOTS.trinket) + (syn ? `<div class="slots">${syn}</div>` : '');
   }
 
+  // ---------- Края экрана: вспышка при ударе и пульс при малом здоровье ----------
+  hurtFlash() { const el = $('hurt-fx'); el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); }
+  private danger = false;
+  setDanger(on: boolean) { if (on === this.danger) return; this.danger = on; $('hurt-fx').classList.toggle('danger', on); }
+
   // ---------- Рация: реплика печатается по буквам ----------
   private radioTimer = 0;
   radio(text: string) {
@@ -261,7 +267,7 @@ export class Hud {
     el.classList.add('shake');
     sfx.play('chestopen');
     let ready = false;
-    const open = window.setTimeout(() => { el.classList.remove('shake'); el.classList.add('open'); sfx.play('reveal'); setTimeout(() => (ready = true), 350); }, 620);
+    const open = window.setTimeout(() => { el.classList.remove('shake'); el.classList.add('open'); sfx.play('reveal'); haptic('chest'); setTimeout(() => (ready = true), 350); }, 620);
     el.onclick = () => {
       if (!ready) return;
       clearTimeout(open);
@@ -301,7 +307,7 @@ export class Hud {
     const finish = (el: HTMLElement | null, fn: () => void) => {
       if (done) return;
       done = true;
-      sfx.play('card', 1, 1.4);
+      sfx.play('card', 1, 1.4); haptic('pick');
       if (el) el.classList.add('picked');
       cards.classList.add('closing');
       setTimeout(() => { wrap.classList.add('hidden'); cards.classList.remove('closing'); fn(); }, 220);

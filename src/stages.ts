@@ -1,5 +1,6 @@
 import type { ZType } from './textures';
 import type { GenOpts, Palette } from './world';
+import type { AmbientKind } from './ambient';
 
 export const STAGE_TIME = 600; // 10 минут — уровень пройден
 
@@ -11,6 +12,8 @@ export interface StageDef {
   gen: GenOpts;
   hpMul: number; dmgMul: number; rateMul: number;
   bosses: ZType[];
+  /** что летает в воздухе */
+  ambient?: AmbientKind;
   weights: (t: number) => [ZType, number][];
 }
 
@@ -18,7 +21,7 @@ const ramp = (t: number, from: number, max: number, span: number) => (t > from ?
 
 export const STAGES: StageDef[] = [
   {
-    name: 'Окраина',
+    name: 'Окраина', ambient: 'pollen',
     desc: 'Заросший пустырь: стены, ящики, холмы с пандусами. Ближе к концу появляются прыгуны.',
     bg: '#151a14',
     palette: { floor: [0x262d23, 0x46553a, 0x6a7d50], ramp: [0x36412f, 0x58694a], wallTop: 0x6a6e78, wallFace: 0x3a3d44, wallLine: 0x50545c, deco: 0x3d4a2c, pit: 0x050605, toxic: 0x5c940d },
@@ -31,7 +34,7 @@ export const STAGES: StageDef[] = [
     ],
   },
   {
-    name: 'Разлом',
+    name: 'Разлом', ambient: 'embers',
     desc: 'Каменистое плато, изрезанное пропастями. Отбрасывай зомби в провал! Прыгуны и подрывники.',
     bg: '#1a1411',
     palette: { floor: [0x3a2e27, 0x5a4638, 0x7d634d], ramp: [0x4a3b31, 0x6b5543], wallTop: 0x7a6a5e, wallFace: 0x483b32, wallLine: 0x5e5046, deco: 0x51402f, pit: 0x040303, toxic: 0x5c940d },
@@ -45,7 +48,7 @@ export const STAGES: StageDef[] = [
     ],
   },
   {
-    name: 'Некрополь',
+    name: 'Некрополь', ambient: 'wisps',
     desc: 'Склеп из комнат и коридоров. Ядовитые лужи, могилы поднимают мертвецов, призраки ходят сквозь стены.',
     bg: '#12131a',
     palette: { floor: [0x23252e, 0x353a4b, 0x4b5168], ramp: [0x2c2f3c, 0x41465a], wallTop: 0x5b5470, wallFace: 0x2e2a3b, wallLine: 0x433d55, deco: 0x2f3340, pit: 0x030304, toxic: 0x4d7c0f },

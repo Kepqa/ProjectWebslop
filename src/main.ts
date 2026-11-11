@@ -9,6 +9,7 @@ import { STAGES, loadProgress } from './stages';
 import { fetchStats, isDev, trackRun, trackVisit } from './stats';
 import { CHAPTERS } from './story';
 import { settings, saveSettings } from './settings';
+import { haptic, hapticsSupported } from './haptics';
 import { BLADES, META, buyMeta, loadMeta, pickBlade } from './meta';
 import { ACHIEVEMENTS, LOCKED_BY, isUnlocked, loadAch, unlockedSet } from './achievements';
 import { SYNERGIES, UPGRADES, byId } from './upgrades';
@@ -201,6 +202,7 @@ function showMenu(leaveRoom: boolean) {
   for (const id of ['levelup', 'end', 'pause-ov', 'vote', 'wait', 'countdown', 'chest', 'evo', 'radio']) $(id).classList.add('hidden');
   for (const id of ['joy-base', 'joy-knob']) $(id).style.display = 'none';
   document.body.style.background = '';
+  $('hurt-fx').className = '';
   renderStages();
   showPanel(lobby === 'idle' ? 'main' : 'coop');
   renderBones();
@@ -320,10 +322,15 @@ const syncSet = () => {
   $('set-gloomy').classList.toggle('on', settings.grim);
   document.body.classList.toggle('grim', settings.grim);
   $('set-lefty').classList.toggle('on', settings.lefty);
+  $('set-particles').classList.toggle('on', settings.particles);
+  $('set-haptics').classList.toggle('on', settings.haptics);
+  $('set-haptics').classList.toggle('hidden', !hapticsSupported());
   document.body.classList.toggle('lefty', settings.lefty);
 };
 syncSet();
 $('set-gloomy').addEventListener('click', () => { settings.grim = !settings.grim; saveSettings(); syncSet(); });
+$('set-particles').addEventListener('click', () => { settings.particles = !settings.particles; saveSettings(); syncSet(); });
+$('set-haptics').addEventListener('click', () => { settings.haptics = !settings.haptics; saveSettings(); syncSet(); haptic('level'); });
 $('set-lefty').addEventListener('click', () => { settings.lefty = !settings.lefty; saveSettings(); syncSet(); });
 
 // Навигация меню

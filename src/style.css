@@ -600,3 +600,12 @@ body.grim .hub-back { color: var(--muted); }
 @keyframes blink { 50% { opacity: .2; } }
 @media (max-width: 600px) and (orientation: portrait) { #radio { bottom: auto; top: calc(env(safe-area-inset-top) + 170px); } }
 .stars { font-size: 34px; letter-spacing: 6px; color: var(--gold); text-shadow: 0 3px 0 #000; } .stars i { font-style: normal; color: #ffffff26; }
+
+/* --- края экрана: удар по герою и мало здоровья --- */
+#hurt-fx { position: fixed; inset: 0; pointer-events: none; z-index: 3; opacity: 0; background: radial-gradient(ellipse 80% 80% at 50% 50%, transparent 48%, #b0130f 130%); }
+#hurt-fx.hit { animation: hurt-hit .45s ease-out; }
+#hurt-fx.danger { opacity: .55; animation: hurt-beat 1s ease-in-out infinite; }
+#hurt-fx.danger.hit { animation: hurt-hit .45s ease-out, hurt-beat 1s ease-in-out .45s infinite; }
+@keyframes hurt-hit { from { opacity: 1; } to { opacity: 0; } }
+@keyframes hurt-beat { 0%, 100% { opacity: .25; } 12% { opacity: .7; } 24% { opacity: .35; } 36% { opacity: .62; } }
+@media (prefers-reduced-motion: reduce) { #hurt-fx.danger { animation: none; opacity: .4; } }

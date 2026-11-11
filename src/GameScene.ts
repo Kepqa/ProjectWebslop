@@ -12,6 +12,8 @@ import { S, WALK_FRAMES, ZLOOK, ZTYPES, makeTextures, zOrigin, type ZType } from
 import { World, FlowField, TILE, K_CRATE, K_GRAVE, K_FLOOR, K_PIT, K_TOXIC, K_DOOR, K_DOOROPEN, K_EXIT, key2, type Body } from './world';
 import { Controls } from './controls';
 import { Look } from './look';
+import { Ambient } from './ambient';
+import { haptic } from './haptics';
 import { BLADES, addBones, loadMeta, metaBonus, type MetaBonus } from './meta';
 import { nearestGoals, recordLife, unlockedSet, type AchDef } from './achievements';
 import { CHAPTERS, type StoryMap } from './story';
@@ -156,6 +158,8 @@ export class GameScene extends Phaser.Scene {
   private remoteStrokes = new Map<number, Stroke>();
   private controls!: Controls;
   private look!: Look;
+  private ambient!: Ambient;
+  private punch = 0; private stepT = 0;
   private mode: 'survival' | 'story' = 'survival';
   private chapter = 0;
   private map: StoryMap | null = null;
@@ -234,6 +238,7 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.me.img, false, 1, 1);
     this.applyZoom();
     this.look = new Look(this);
+    this.ambient = new Ambient(this, this.stage.ambient);
     this.scale.on('resize', this.applyZoom, this);
     const onVis = () => { if (document.hidden && !this.coop && !this.paused && !this.over) this.requestPause(); };
     document.addEventListener('visibilitychange', onVis);
@@ -340,6 +345,13 @@ export class GameScene extends Phaser.Scene {
     if (x === undefined || y === undefined) return 1;
     return Phaser.Math.Clamp(1.3 - Math.hypot(x - this.me.x, y - this.me.y) / 800, 0, 1);
   }
+  /** Короткий «удар» камерой: приближение и возврат. */
+  private zoomPunch(k: number) {
+    if (this.punch > 0) return;
+    this.punch = 1;
+    const cam = this.cameras.main, z = this.worldZoom * this.dpr;
+    this.tweens.add({ targets: cam, zoom: z * (1 + k), duration: 70, yoyo: true, ease: 'Quad.easeOut', onComplete: () => { cam.setZoom(this.worldZoom * this.dpr); this.punch = 0; } });
+  }
   private shake(d: number, i: number) { this.cameras.main.shake(d, i); this.E('k', d, i); }
   private toast(msg: string, ms = 1600) { this.hud.toast(msg, ms); this.E('t', msg, ms); }
 
@@ -414,7 +426,7 @@ export class GameScene extends Phaser.Scene {
       if (s.left > 0 || this.frenzyT > 0 || this.infEnergy) { s.left -= d; kind = 'blade'; }
       // Кровавый пакт: затупившийся взмах режет за счёт здоровья
       else if (st.pactDmg > 0 && pl.hp > 8) { if (!this.god) pl.hp -= d * 0.012; kind = 'blade'; if (Math.random() < 0.3) this.vfx.burst('gore', 1, wx, wy); }
-      else if (!s.dulled) { s.dulled = true; if (pl === this.me) sfx.play('dull'); }
+      else if (!s.dulled) { s.dulled = true; if (pl === this.me) { sfx.play('dull'); haptic('dull'); } }
     }
     if (kind === 'blade' && !s.beatChecked) {
       s.beatChecked = true;
@@ -784,6 +796,7 @@ export class GameScene extends Phaser.Scene {
       const st = pl.stats;
       if (st.bleedDps > 0) { z.bleedUntil = this.elapsed + 3; z.bleedDps = st.bleedDps; z.bleedOwner = pl; if (st.syn.epidemic) z.plague = true; }
       this.burst('gore', z.heavy ? 5 : 3, z.x, z.y);
+      this.vfx.spray(z.heavy ? 9 : 6, z.x, z.y, ang); this.E('y', z.heavy ? 9 : 6, z.x | 0, z.y | 0, +ang.toFixed(2));
       this.snd('hit', 0.8, z.x, z.y);
       const pitch = 1 + 0.07 * Math.min(14, stroke?.kills ?? 0);
       let d = dmg, crit = !!stroke && (stroke.charged || stroke.beat);
@@ -812,10 +825,12 @@ export class GameScene extends Phaser.Scene {
       else {
         // отдача: короткий стоп-кадр на каждое убийство клинком, длиннее — на серию и на крупных
         this.hitstop = Math.max(this.hitstop, heavy ? 0.07 : stroke && stroke.kills >= 2 ? 0.032 : 0.018);
+        if (pl === this.me) haptic(heavy ? 'heavy' : stroke && stroke.kills >= 2 ? 'multi' : 'cut');
         if (!stroke) continue;
         stroke.kills++;
         stroke.left += st.strokeRefund;
         if (stroke.kills === 3 || stroke.kills === 6 || stroke.kills === 10) this.shake(70, 0.0025 + stroke.kills * 0.0004);
+        if (stroke.kills === 6 || stroke.kills === 12) this.zoomPunch(0.025);
         if (Math.random() < pl.stats.chainChance) this.chain(z, pl);
         if (stroke.kills >= (stroke.blasts + 1) * pl.stats.comboThreshold) {
           stroke.blasts++;
@@ -990,6 +1005,8 @@ export class GameScene extends Phaser.Scene {
     for (const g of got) { g.pulled = true; g.to = pl; g.t = Math.max(g.t, boost * 2); if (big && !g.chest && !g.heal) g.value *= 1.15; }
     const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
     this.snd('loop', 1, cx, cy, 1 + Math.min(0.5, got.length * 0.02));
+    if (pl === this.me) haptic('pick');
+    for (const g of got.slice(0, 24)) this.vfx.burst('xp', 2, g.x, g.y);
     if (big) this.text(cx, cy, `ЖАТВА ×${got.length}`, '#a5d8ff', got.length >= 20 ? 28 : 22);
     return got.length;
   }
@@ -1055,7 +1072,7 @@ export class GameScene extends Phaser.Scene {
     const dmg = 16 * Math.sqrt(this.hpScale) * mul, R = BARREL_BLAST * (b.rolling ? 1.2 : 1);
     this.burst('gore', 4, b.x, b.y); this.burst('dust', 14, b.x, b.y);
     this.ring(b.x, b.y, R * 0.6, 0xffe066, 0.25, 8);
-    this.shake(180, 0.008);
+    this.shake(180, 0.008); if (Math.hypot(b.x - this.me.x, b.y - this.me.y) < 420) { haptic('heavy'); this.zoomPunch(0.03); }
     this.snd('explode', 1, b.x, b.y);
     this.blast(b.x, b.y, R, dmg, 0xff6b00, 460);
     // своя же бочка опасна: стой подальше
@@ -1290,7 +1307,7 @@ export class GameScene extends Phaser.Scene {
     this.snd(sliceAngle !== undefined ? 'kill' : 'pop', big ? 1 : 0.75, z.x, z.y, big ? 0.6 : pitch);
     if (z.boss) {
       this.hitstop = 0.18;
-      this.shake(400, 0.015);
+      this.shake(400, 0.015); this.zoomPunch(0.06); haptic('boss');
       this.ring(z.x, z.y, 220, 0xffd43b, 0.6, 6);
       this.burst('magic', 40, z.x, z.y);
       this.snd('explode');
@@ -1390,7 +1407,7 @@ export class GameScene extends Phaser.Scene {
     if (p === this.me) {
       this.cameras.main.shake(110, 0.007);
       this.cameras.main.flash(90, 140, 0, 0);
-      sfx.play('hurt');
+      sfx.play('hurt'); haptic('hurt'); this.hud.hurtFlash();
     } else this.E('h', p.idx);
     if (p.stats.bell && p.hp > 0 && p.hp < p.stats.maxHp * 0.35 && p.bellCd <= this.elapsed) {
       p.bellCd = this.elapsed + 25;
@@ -1727,6 +1744,7 @@ export class GameScene extends Phaser.Scene {
       if (p.toxicTick <= 0) { p.toxicTick = 0.15; this.burst('acid', 1, p.x, p.y); }
     }
     p.bob += dt * 14 * p.moving;
+    if (p.alive && p.moving > 0.3 && p === this.me) { this.stepT -= dt; if (this.stepT <= 0) { this.stepT = 0.16; this.vfx.burst('step', 1, p.x - Math.cos(p.rot) * 10, p.y - Math.sin(p.rot) * 10 + 6); } }
     const sc = ((1 + 0.07 * p.lvl) * (1 + Math.sin(p.bob) * 0.05 * p.moving)) / S;
     p.img.setPosition(p.x, p.y).setScale(sc).setRotation(p.rot);
     const key = p.idx === 0 ? 'player' : 'player2';
@@ -2393,7 +2411,7 @@ export class GameScene extends Phaser.Scene {
           this.burst('heal', 14, p.x, p.y); this.snd('heal', 1, p.x, p.y);
           this.text(p.x, p.y - 26, '+25', '#69db7c', 20);
         } else {
-          this.vfx.burst('spark', 2, g.x, g.y);
+          this.vfx.burst('xp', g.value >= 5 ? 5 : 2, g.x, g.y);
           if (p === this.me) sfx.play('gem', 0.8); else this.E('s', 'gem', 0.8, g.x | 0, g.y | 0);
           this.gainXp(g.value * p.stats.xpMul * this.comboXp());
           if (p.stats.greedDmg > 0 && p.greedCd <= this.elapsed) {
@@ -2452,7 +2470,12 @@ export class GameScene extends Phaser.Scene {
     for (const s of this.remoteStrokes.values()) this.finishStroke(s);
     this.endLocalStrokes(); this.remoteStrokes.clear();
     this.controls?.reset();
-    sfx.play('level');
+    sfx.play('level'); haptic('level');
+    // волна уровня: вспышка и толчок — секунда передышки перед выбором
+    for (const p of this.alivePlayers()) {
+      this.ring(p.x, p.y, 190, 0xb197fc, 0.5, 6); this.burst('xp', 26, p.x, p.y);
+      for (const z of this.queryRect(p.x - 190, p.y - 190, p.x + 190, p.y + 190)) if (!z.dead && !z.heavy && !z.air) { const a = Math.atan2(z.y - p.y, z.x - p.x); z.kx += Math.cos(a) * 420; z.ky += Math.sin(a) * 420; }
+    }
     this.picks.clear();
     for (const p of this.players) {
       const ch = rollChoices(p.levels, p.unlocked);
@@ -2770,6 +2793,7 @@ export class GameScene extends Phaser.Scene {
     });
     this.hud.setScore(this.score, this.combo, this.comboMul, this.combo ? this.comboT / this.comboWindow() : 0, this.frenzyT > 0);
     sfx.musicMood(this.paused || this.over ? -1 : this.combo, !!boss, this.frenzyT > 0, me.hp / me.stats.maxHp);
+    this.hud.setDanger(me.alive && !this.over && me.hp / me.stats.maxHp < 0.3);
   }
 
   /** Текущая цель (сюжет): текст сверху, стрелка у края экрана с расстоянием. */

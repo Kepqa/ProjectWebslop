@@ -11,7 +11,7 @@ export type Fx =
   | { kind: 'wave'; cx: number; cy: number; pts: number[]; s0: number; s1: number; born: number; life: number; fire: boolean };
 
 type Emitter = Phaser.GameObjects.Particles.ParticleEmitter;
-export const EMITTERS = ['gore', 'spark', 'dust', 'wood', 'acid', 'magic', 'chunk', 'heal'] as const;
+export const EMITTERS = ['gore', 'spark', 'dust', 'wood', 'acid', 'magic', 'chunk', 'heal', 'spray', 'step', 'xp'] as const;
 export type EmitterName = typeof EMITTERS[number];
 
 export class Effects {
@@ -31,11 +31,22 @@ export class Effects {
       magic: mk({ speed: { min: 150, max: 420 }, lifespan: { min: 400, max: 800 }, scale: { start: 0.6, end: 0 }, tint: [0xb197fc, 0xffd43b, 0xffffff], blendMode: 'ADD' }),
       // куски тела: цвет задаётся перед выбросом
       chunk: mk({ speed: { min: 120, max: 360 }, lifespan: { min: 350, max: 700 }, rotate: { min: 0, max: 360 }, scale: { start: 1.3, end: 0.5 }, alpha: { start: 1, end: 0 } }, 'chip'),
+      // брызги по направлению удара: кровь летит туда, куда шёл клинок
+      spray: mk({ speed: { min: 160, max: 520 }, lifespan: { min: 220, max: 520 }, scale: { start: 0.62, end: 0 }, tint: [0x8c2f39, 0xa61e4d, 0x5c1a22], angle: { min: -20, max: 20 } }),
+      step: mk({ speed: { min: 8, max: 30 }, lifespan: { min: 300, max: 520 }, scale: { start: 0.5, end: 1.1 }, alpha: { start: 0.22, end: 0 }, tint: [0x868e96, 0x6c6f66] }),
+      xp: mk({ speed: { min: 40, max: 160 }, lifespan: { min: 300, max: 600 }, scale: { start: 0.4, end: 0 }, tint: [0x66d9e8, 0xc5f6fa, 0xffffff], blendMode: 'ADD', gravityY: -160 }),
       heal: mk({ speed: { min: 40, max: 140 }, lifespan: { min: 500, max: 900 }, scale: { start: 0.6, end: 0 }, tint: [0x69db7c, 0xb2f2bb, 0xffffff], gravityY: -120 }),
     };
   }
 
   burst(name: EmitterName, n: number, x: number, y: number) { this.em[name].explode(n, x, y); }
+
+  /** Кровь веером по направлению удара (ang — радианы). */
+  spray(n: number, x: number, y: number, ang: number) {
+    const d = Phaser.Math.RadToDeg(ang);
+    this.em.spray.setEmitterAngle({ min: d - 24, max: d + 24 });
+    this.em.spray.explode(n, x, y);
+  }
 
   ring(now: number, x: number, y: number, r: number, color: number, life: number, width?: number) {
     this.fx.push({ kind: 'ring', x, y, r, color: tone(color), born: now, life, width });

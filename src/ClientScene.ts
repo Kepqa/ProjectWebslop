@@ -13,6 +13,8 @@ import { S, WALK_FRAMES, ZTYPES, makeTextures, zOrigin } from './textures';
 import { World, K_FLOOR, K_TOXIC, K_DOOR, K_DOOROPEN, TILE, key2, type Body } from './world';
 import { Controls } from './controls';
 import { Look } from './look';
+import { Ambient } from './ambient';
+import { haptic } from './haptics';
 import { CHAPTERS, type StoryMap } from './story';
 import { BOMB_R, PLAYER_R, PLAYER_SPEED, RUN_MUL, SLAM_R, SWIPE_MIN_SPEED, bladeColor, worldZoomFor, drawAura, drawBeacon, drawBurn, drawCharge, drawRevive, drawVitals, drawVortex, styleDowned } from './GameScene';
 
@@ -132,6 +134,7 @@ export class ClientScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.meImg, false, 1, 1);
     this.applyZoom();
     this.look = new Look(this);
+    new Ambient(this, this.stage.ambient);
     this.scale.on('resize', this.applyZoom, this);
     session.onMsg = this.onMsg;
     session.onSnap = this.onSnap;
@@ -345,6 +348,7 @@ export class ClientScene extends Phaser.Scene {
       }
       case 'g': this.segs.push({ x1: n(1), y1: n(2), x2: n(3), y2: n(4), born: now, kind: (['blade', 'dull', 'echo'] as const)[n(5)], width: n(6), color: n(7) || undefined }); break;
       case 'R': this.hud.radio(e[1] as string); break;
+      case 'y': this.vfx.spray(n(1), n(2), n(3), n(4)); break;
       case 'n': this.vfx.num(n(1), n(2), String(e[3]), !!n(4)); break;
       case 'B': this.burns.push({ x1: n(1), y1: n(2), x2: n(3), y2: n(4), until: now + n(5), w: n(6) }); break;
     }
@@ -561,6 +565,7 @@ export class ClientScene extends Phaser.Scene {
       xp: this.hdr.xp, xpNext: this.hdr.xn, time: this.hdr.t, total: this.hdr.T, kills: this.hdr.k, level: this.hdr.lv, wave: this.wave,
     });
     this.hud.setScore(this.sc[0], this.sc[1], this.sc[2], this.sc[3], !!this.sc[4]);
+    this.hud.setDanger(!!my && my.alive && !this.over && my.hp / my.mhp < 0.3);
     sfx.musicMood(this.paused || this.over ? -1 : this.sc[1], !!this.hdr.boss, !!this.sc[4], my ? my.hp / my.mhp : 1);
   }
 }

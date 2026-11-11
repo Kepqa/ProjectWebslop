@@ -5,7 +5,7 @@ import type { StageDef } from './stages';
 /** Сюжет: главы. Сейчас готова первая; остальные — следующие итерации. */
 /** Внешний вид и враги главы 1 (в формате уровня выживания — для общих систем). */
 export const BUILDING_STAGE: StageDef = {
-  name: 'Здание',
+  name: 'Здание', ambient: 'dust',
   desc: '',
   bg: '#0f1012',
   palette: { floor: [0x34373d, 0x45494f, 0x55595f], ramp: [0x3a3d42, 0x4a4d52], wallTop: 0x6b6460, wallFace: 0x3d3835, wallLine: 0x524b47, deco: 0x2c2f33, pit: 0x050505, toxic: 0x4d7c0f },
@@ -404,15 +404,15 @@ const VILLAGE_PAL = { floor: [0x2e4423, 0x3a5a2e, 0x4a6b38], ramp: [0x3b5a2e, 0x
 const NOGEN = { plateau: 0, walls: [0, 0] as [number, number], crates: [0, 0] as [number, number], pits: false, maze: false, toxic: false, graves: [0, 0] as [number, number] };
 
 export const CITY_STAGE: StageDef = {
-  name: 'Город', desc: '', bg: '#101113', palette: CITY_PAL, gen: NOGEN, hpMul: 1.05, dmgMul: 1, rateMul: 1, bosses: ['brood'],
+  name: 'Город', ambient: 'ash', desc: '', bg: '#101113', palette: CITY_PAL, gen: NOGEN, hpMul: 1.05, dmgMul: 1, rateMul: 1, bosses: ['brood'],
   weights: (p) => [['walker', 1], ['runner', p > 0.1 ? 0.3 : 0], ['spitter', p > 0.3 ? 0.15 : 0], ['bomber', p > 0.4 ? 0.1 : 0], ['charger', p > 0.45 ? 0.12 : 0], ['brute', p > 0.5 ? 0.07 : 0], ['jumper', p > 0.6 ? 0.1 : 0]],
 };
 export const LOOT_STAGE: StageDef = {
-  ...CITY_STAGE, name: 'Мародёрство', palette: { ...CITY_PAL, wallTop: 0x6b5a4f, wallFace: 0x3d332c }, hpMul: 1.15, dmgMul: 1.08, bosses: ['necro'],
+  ...CITY_STAGE, name: 'Мародёрство', ambient: 'rain', palette: { ...CITY_PAL, wallTop: 0x6b5a4f, wallFace: 0x3d332c }, hpMul: 1.15, dmgMul: 1.08, bosses: ['necro'],
   weights: (p) => [['walker', 1], ['runner', 0.25], ['shield', p > 0.2 ? 0.15 : 0], ['spitter', p > 0.3 ? 0.15 : 0], ['bomber', p > 0.4 ? 0.1 : 0], ['charger', p > 0.5 ? 0.12 : 0], ['brute', p > 0.55 ? 0.08 : 0], ['ghost', p > 0.6 ? 0.1 : 0]],
 };
 export const VILLAGE_STAGE: StageDef = {
-  name: 'Деревня', desc: '', bg: '#0e1a0c', palette: VILLAGE_PAL, gen: NOGEN, hpMul: 1.25, dmgMul: 1.15, rateMul: 1, bosses: ['leaper'],
+  name: 'Деревня', ambient: 'leaves', desc: '', bg: '#0e1a0c', palette: VILLAGE_PAL, gen: NOGEN, hpMul: 1.25, dmgMul: 1.15, rateMul: 1, bosses: ['leaper'],
   weights: (p) => [['walker', 0.7], ['dog', 0.5], ['boar', p > 0.15 ? 0.18 : 0], ['runner', 0.2], ['jumper', p > 0.45 ? 0.1 : 0], ['brute', p > 0.5 ? 0.06 : 0]],
 };
 
