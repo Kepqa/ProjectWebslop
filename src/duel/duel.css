@@ -1,7 +1,16 @@
+/* Дуэль — единый тёмный «закатный» мир: тёмно-сливовый фон, жар заката в акцентах. */
+:root {
+  --bg: #120a14; --panel: #ffffff0a; --line: #ffffff1c;
+  --ink: #f4eaf2; --ink-2: #cdb8c9; --ink-3: #a998a6; --hot: #ff9a5a;
+  --display: "Unbounded", "Arial Black", system-ui, sans-serif;
+  --body: "Onest", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body {
-  margin: 0; height: 100%; overflow: hidden; background: #120a14; color: #f4eaf2;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink);
+  font-family: var(--body);
   touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
 }
 canvas { position: fixed; inset: 0; display: block; }
@@ -16,10 +25,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 #menu { justify-content: flex-start; background: radial-gradient(ellipse at 50% 0%, #3a1c3fdd 0%, #0c060fee 70%); }
 #menu > * { flex-shrink: 0; }
-.ov h1 { font-size: clamp(42px, 10vw, 76px); margin: 18px 0 0; letter-spacing: 1px; text-transform: uppercase;
+.ov h1 { font: 800 clamp(40px, 10vw, 80px)/1 var(--display); margin: 18px 0 0; letter-spacing: -0.02em; text-transform: uppercase;
   background: linear-gradient(#ffe3a1, #ff7b4a); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.ov h2 { font-size: 44px; margin: 0; }
-.ov h3 { margin: 6px 0 0; font-size: 15px; font-weight: 600; color: #cdb8c9; text-transform: uppercase; letter-spacing: 1px; }
+.ov h2 { font: 800 clamp(32px, 7vw, 48px)/1.1 var(--display); margin: 0; letter-spacing: -0.02em; }
+.ov h3 { margin: 8px 0 0; font: 500 12px/1 var(--mono); color: var(--ink-3); text-transform: uppercase; letter-spacing: .12em; }
 .sub { margin: 0; color: #cdb8c9; max-width: 520px; }
 .back { position: absolute; top: calc(env(safe-area-inset-top) + 10px); left: 12px; color: #e8d2e4; text-decoration: none; font-size: 14px; padding: 6px 10px; border-radius: 8px; background: #ffffff12; }
 
@@ -32,19 +41,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
   width: 196px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left;
   padding: 10px 12px; border-radius: 14px; border: 2px solid #ffffff1c; background: #ffffff0a;
 }
-.hero b { font-size: 18px; color: var(--c); }
+.hero b { font: 600 17px/1.2 var(--display); color: var(--c); }
 .hero small { color: #cdb8c9; font-size: 13px; line-height: 1.3; min-height: 34px; }
 .hero .sp { display: flex; gap: 6px; font-size: 20px; } .hero .sp i { font-style: normal; }
-.hero .st { font-size: 12px; color: #a998a6; }
+.hero .st { font: 500 11px/1.3 var(--mono); color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .hero.on { border-color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); }
 
-.go { margin-top: 6px; padding: 14px 44px; font-size: 22px; font-weight: 800; border: 0; border-radius: 14px;
+.go { margin-top: 6px; padding: 14px 44px; font: 800 20px/1 var(--display); letter-spacing: .02em; border: 0; border-radius: 14px;
   background: linear-gradient(#ff9a5a, #e2523a); color: #fff; box-shadow: 0 4px 0 #8a2a1e; }
 .go:active { transform: translateY(3px); box-shadow: 0 1px 0 #8a2a1e; }
 .ghost { padding: 10px 26px; border-radius: 12px; border: 2px solid #ffffff30; background: transparent; font-size: 16px; }
-.record { font-size: 13px; color: #a998a6; min-height: 16px; }
+.record { font: 500 12px/1.4 var(--mono); color: var(--ink-3); min-height: 16px; font-variant-numeric: tabular-nums; }
 
-.help { max-width: 760px; width: 100%; text-align: left; background: #ffffff0a; border-radius: 12px; padding: 8px 14px; }
+.help { max-width: 760px; min-width: 0; width: 100%; text-align: left; background: #ffffff0a; border-radius: 12px; padding: 8px 14px; }
 .help summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .moves { margin: 6px 0; padding-left: 18px; line-height: 1.45; font-size: 14px; color: #e2d4e0; }
 .tbl { overflow-x: auto; }
@@ -104,3 +113,25 @@ th { color: #a998a6; font-weight: 500; text-align: left; }
   .acts .tb { width: 54px; height: 54px; } .acts .tb.big { width: 66px; height: 66px; }
   .tb.sp { width: 46px; height: 46px; font-size: 19px; }
 }
+
+/* ---------- графика в справке ---------- */
+.help h4 { margin: 18px 0 6px; font: 500 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+.help :focus-visible, .ov button:focus-visible, .ov a:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+.fig { margin: 0; display: grid; gap: 8px; min-width: 0; }
+.fig svg { display: block; width: 100%; max-width: 100%; height: auto; }
+.diagram { color: var(--ink-2); font-family: var(--body); }
+.frames { font-family: var(--body); }
+.frames .num, .ftable .num { font-variant-numeric: tabular-nums; }
+.fig figcaption { font-size: 13px; color: var(--ink-3); line-height: 1.45; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--ink-2); }
+.lg { display: inline-flex; align-items: center; gap: 6px; }
+.lg i { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+.lg b { color: var(--ink); font-weight: 600; }
+.chartbox { position: relative; overflow-x: auto; }
+.chartbox svg { min-width: 520px; }
+.seg { transition: opacity .12s; } .seg.dim { opacity: .35; }
+.ttip { position: absolute; left: 0; top: 0; pointer-events: none; white-space: nowrap; font-size: 12px; padding: 5px 8px; border-radius: 6px;
+  background: #241828; color: var(--ink); border: 1px solid var(--line); box-shadow: 0 6px 16px #0008; }
+.tview summary { font-size: 13px; color: var(--ink-2); cursor: pointer; }
+.ftable td.num { text-align: right; }
+@media (prefers-reduced-motion: reduce) { .seg { transition: none; } }

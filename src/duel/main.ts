@@ -4,6 +4,7 @@ import { Bot, LEVELS } from './ai';
 import { type Cmd, Game, HEROES, type Hero, NOCMD } from './game';
 import { P1, P2, SOLO, clearInput, endFrame, initInput, label, readCmd, touchUsed } from './input';
 import { Renderer } from './render';
+import { counterDiagram, frameChart, wireChart } from './charts';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -59,6 +60,7 @@ function renderMenu() {
   const w = loadWins();
   $('record').textContent = pvp ? '' : `Побед над ботом: ${LEVELS.map((l, i) => `${l.name} — ${w[i]}`).join(' · ')}`;
   $('help').innerHTML = helpHtml(pvp);
+  wireChart($('help'));
   savePrefs();
 }
 
@@ -76,7 +78,7 @@ function helpHtml(pvp: boolean) {
   const head = '<tr><th></th><th>Ходьба</th><th>Прыжок</th><th>Удар</th><th>Сильный</th><th>Блок</th><th>Кувырок</th><th>Заклинания</th></tr>';
   const table = `<div class="tbl"><table>${head}${pvp ? row('Игрок 1', P1) + row('Игрок 2', P2) : row('Клавиатура', SOLO)}</table></div>`;
   const touch = pvp ? '<p class="note">Режим вдвоём — только с клавиатуры.</p>' : '<p class="note">На телефоне — кнопки на экране. Лучше держать горизонтально.</p>';
-  return moves + table + touch;
+  return `<h4>Приёмы</h4>${moves}<h4>Что чем бьётся</h4>${counterDiagram()}<h4>Тайминги ударов</h4>${frameChart()}<h4>Клавиши</h4>${table}${touch}`;
 }
 
 $('modes').addEventListener('click', (e) => {

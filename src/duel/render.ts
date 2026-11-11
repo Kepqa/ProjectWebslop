@@ -63,7 +63,7 @@ export class Renderer {
       c.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
     }
     c.globalAlpha = 1;
-    c.textAlign = 'center'; c.font = 'bold 22px system-ui, sans-serif';
+    c.textAlign = 'center'; c.font = '700 22px Onest, system-ui, sans-serif';
     for (const t of g.texts) {
       c.globalAlpha = Math.min(1, t.life * 2);
       c.lineWidth = 4; c.strokeStyle = '#000a'; c.strokeText(t.text, t.x, t.y); c.fillStyle = t.color; c.fillText(t.text, t.x, t.y);
@@ -399,7 +399,7 @@ export class Renderer {
       const ns = shown > f.hp ? Math.max(f.hp, shown - 40 * (1 / 60)) : f.hp;
       this.shownHp.set(f, ns);
       // имя и победы
-      c.font = 'bold 18px system-ui, sans-serif'; c.textAlign = left ? 'left' : 'right';
+      c.font = '600 17px Unbounded, system-ui, sans-serif'; c.textAlign = left ? 'left' : 'right';
       c.lineWidth = 4; c.strokeStyle = '#000a';
       const label = f.hero.name;
       c.strokeText(label, left ? x0 : x0 + bw, top + 12); c.fillStyle = '#fff'; c.fillText(label, left ? x0 : x0 + bw, top + 12);
@@ -439,16 +439,16 @@ export class Renderer {
       });
     });
     // таймер
-    c.textAlign = 'center'; c.font = 'bold 38px system-ui, sans-serif';
+    c.textAlign = 'center'; c.font = '800 34px Unbounded, system-ui, sans-serif';
     c.lineWidth = 5; c.strokeStyle = '#000a';
     const tm = String(Math.ceil(g.timer));
     c.strokeText(tm, W / 2, top + 50); c.fillStyle = g.timer < 10 ? '#ff7a6b' : '#fff'; c.fillText(tm, W / 2, top + 50);
-    c.font = '13px system-ui'; c.fillStyle = '#fffa'; c.fillText(`Раунд ${g.round}`, W / 2, top + 70);
+    c.font = '500 12px "JetBrains Mono", monospace'; c.fillStyle = '#fffa'; c.fillText(`Раунд ${g.round}`, W / 2, top + 70);
     // баннер
     if (g.bannerT > 0) {
       const k = Math.min(1, g.bannerT * 3);
       c.globalAlpha = k;
-      c.font = `900 ${Math.round(72 + (1 - k) * 20)}px system-ui, sans-serif`;
+      c.font = `800 ${Math.round(64 + (1 - k) * 18)}px Unbounded, system-ui, sans-serif`;
       c.lineWidth = 8; c.strokeStyle = '#000'; c.strokeText(g.banner, W / 2, 250);
       c.fillStyle = g.banner === 'K.O.' ? '#ff5a4a' : '#ffe9a8'; c.fillText(g.banner, W / 2, 250);
       c.globalAlpha = 1;

@@ -3,55 +3,60 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#f6f1e7" />
+  <meta name="theme-color" content="#e8ebf1" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)" />
   <title>Webslop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" />
 </head>
 <body>
-  <header>
-    <h1>Webslop</h1>
-    <p>Маленькие игрушки, в которые можно залипнуть на пять минут. Или на час.</p>
+  <header class="top">
+    <h1 class="mark">Web<span>slop</span></h1>
+    <p class="lede">Маленькие браузерные игры. Открываются сразу, без установки, на телефоне и на компьютере.</p>
+    <p class="count" id="count">2 игры · 1 в работе</p>
   </header>
 
-  <main class="grid">
-    <a class="card" href="./survivors/" style="--bg:#1f2a1c; --ink:#d7f0b5">
-      <div class="art">
-        <svg viewBox="0 0 200 120" aria-hidden="true">
-          <rect width="200" height="120" fill="#24301f"/>
-          <g fill="#5c7a3a"><circle cx="40" cy="80" r="9"/><circle cx="62" cy="38" r="9"/><circle cx="150" cy="30" r="9"/><circle cx="168" cy="86" r="9"/><circle cx="128" cy="96" r="9"/><circle cx="30" cy="30" r="9"/></g>
-          <circle cx="100" cy="62" r="11" fill="#f2d27a"/>
-          <path d="M40 100 Q100 10 175 60" stroke="#eaf7ff" stroke-width="5" fill="none" stroke-linecap="round" opacity=".9"/>
-        </svg>
+  <main class="shelf">
+    <a class="cart" href="./survivors/" style="--tint: var(--t-green)">
+      <canvas class="preview" data-game="survivors" aria-hidden="true"></canvas>
+      <div class="plate">
+        <span class="genre">выживание · орды</span>
+        <h2>Swipe Survivors</h2>
+        <p>Режь зомби свайпами, собирай предметы и держись до эвакуации. Сюжет из четырёх глав и кооп по сети.</p>
+        <dl class="meta">
+          <div><dt>Управление</dt><dd>свайп / мышь</dd></div>
+          <div><dt>Игроки</dt><dd>1–2</dd></div>
+          <div><dt>Забег</dt><dd>~10 мин</dd></div>
+        </dl>
       </div>
-      <b>Swipe Survivors</b>
-      <small>Режь орды зомби свайпами. Сюжет, волны, кооп.</small>
     </a>
 
-    <a class="card" href="./duel/" style="--bg:#2a1730; --ink:#ffd4f0">
-      <div class="art">
-        <svg viewBox="0 0 200 120" aria-hidden="true">
-          <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b1d4a"/><stop offset="1" stop-color="#d0644a"/></linearGradient></defs>
-          <rect width="200" height="120" fill="url(#sky)"/>
-          <circle cx="100" cy="70" r="26" fill="#ffcf7a" opacity=".85"/>
-          <rect y="96" width="200" height="24" fill="#2a1a22"/>
-          <g fill="#160c14"><rect x="48" y="58" width="14" height="30" rx="5"/><circle cx="55" cy="50" r="8"/><rect x="48" y="86" width="5" height="12"/><rect x="57" y="86" width="5" height="12"/>
-            <rect x="138" y="58" width="14" height="30" rx="5"/><circle cx="145" cy="50" r="8"/><rect x="138" y="86" width="5" height="12"/><rect x="147" y="86" width="5" height="12"/></g>
-          <path d="M62 66 L92 52" stroke="#e8e8f0" stroke-width="4" stroke-linecap="round"/>
-          <circle cx="118" cy="62" r="7" fill="#ff7b2e"/><circle cx="118" cy="62" r="3.5" fill="#fff2b0"/>
-        </svg>
+    <a class="cart" href="./duel/" style="--tint: var(--t-ember)">
+      <canvas class="preview" data-game="duel" aria-hidden="true"></canvas>
+      <div class="plate">
+        <span class="genre">файтинг · 1 на 1</span>
+        <h2>Дуэль <em class="new">новая</em></h2>
+        <p>Бой сбоку: серии ударов, блок, парирование в последний момент и по три заклинания у каждого бойца.</p>
+        <dl class="meta">
+          <div><dt>Управление</dt><dd>кнопки / клавиатура</dd></div>
+          <div><dt>Игроки</dt><dd>1–2</dd></div>
+          <div><dt>Бой</dt><dd>~3 мин</dd></div>
+        </dl>
       </div>
-      <b>Дуэль</b>
-      <small>Бой один на один: удары, блоки, парирования и заклинания.</small>
-      <i class="new">новое</i>
     </a>
 
-    <div class="card soon">
-      <div class="art"><span>?</span></div>
-      <b>Скоро</b>
-      <small>Следующая игрушка уже в мастерской.</small>
+    <div class="cart slot">
+      <div class="preview empty"><span>следующая игра</span></div>
+      <div class="plate">
+        <span class="genre">в работе</span>
+        <h2>Пустой слот</h2>
+        <p>Здесь появится третья игра.</p>
+      </div>
     </div>
   </main>
 
-  <footer id="ver"></footer>
+  <footer class="foot"><span id="ver"></span></footer>
   <script type="module" src="./src/hub/hub.ts"></script>
 </body>
 </html>

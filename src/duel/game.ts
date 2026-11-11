@@ -17,19 +17,19 @@ export const NOCMD: Cmd = { move: 0, jump: false, light: false, heavy: false, bl
 
 export type Act = 'idle' | 'walk' | 'air' | 'light' | 'heavy' | 'block' | 'dodge' | 'hurt' | 'stun' | 'cast' | 'dash' | 'ko';
 
-interface Move {
+export interface Move {
   startup: number; active: number; recovery: number;
   dmg: number; range: number; kb: number; hitstun: number; guard: number;
   stamina?: number; /** пробивает блок сразу */ crush?: boolean;
 }
 
-const LIGHTS: Move[] = [
+export const LIGHTS: Move[] = [
   { startup: 0.09, active: 0.08, recovery: 0.17, dmg: 6, range: 82, kb: 110, hitstun: 0.28, guard: 9 },
   { startup: 0.08, active: 0.08, recovery: 0.19, dmg: 6, range: 84, kb: 120, hitstun: 0.28, guard: 9 },
   { startup: 0.12, active: 0.1, recovery: 0.3, dmg: 10, range: 90, kb: 380, hitstun: 0.42, guard: 16 },
 ];
-const AIR: Move = { startup: 0.06, active: 0.16, recovery: 0.14, dmg: 8, range: 80, kb: 220, hitstun: 0.34, guard: 12 };
-const HEAVY: Move = { startup: 0.38, active: 0.1, recovery: 0.44, dmg: 17, range: 98, kb: 460, hitstun: 0.5, guard: 42, stamina: 14 };
+export const AIR: Move = { startup: 0.06, active: 0.16, recovery: 0.14, dmg: 8, range: 80, kb: 220, hitstun: 0.34, guard: 12 };
+export const HEAVY: Move = { startup: 0.38, active: 0.1, recovery: 0.44, dmg: 17, range: 98, kb: 460, hitstun: 0.5, guard: 42, stamina: 14 };
 
 export type HeroId = 'knight' | 'mage' | 'rogue';
 
