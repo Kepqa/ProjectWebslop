@@ -60,12 +60,12 @@ export const STAGES: StageDef[] = [
   },
 ];
 
-export interface Progress { unlocked: number; best: Record<number, number>; cleared: Record<number, boolean>; story?: number }
+export interface Progress { unlocked: number; best: Record<number, number>; cleared: Record<number, boolean>; story?: number; stars?: Record<number, number> }
 
 export function loadProgress(): Progress {
   try {
     const p = JSON.parse(localStorage.getItem('ss_progress') || 'null');
-    if (p && typeof p.unlocked === 'number') return { unlocked: p.unlocked, best: p.best ?? {}, cleared: p.cleared ?? {}, story: p.story ?? 0 };
+    if (p && typeof p.unlocked === 'number') return { unlocked: p.unlocked, best: p.best ?? {}, cleared: p.cleared ?? {}, story: p.story ?? 0, stars: p.stars ?? {} };
   } catch { /* ignore */ }
   return { unlocked: 0, best: {}, cleared: {} };
 }

@@ -552,3 +552,51 @@ button:disabled { cursor: default; }
   #combo-txt b { font-size: 20px; } .chest-stage { min-height: 220px; }
 }
 @media (prefers-reduced-motion: reduce) { #chest.shake .chest-box, .chest-rays, #hud .bar.hp.low { animation: none !important; } }
+
+/* ================= Мрачный стиль (body.grim): выцветшая бумага, ржавчина, тьма по краям ================= */
+body.grim {
+  --ink: #090908; --panel: #1c1b18; --panel-hi: #2a2823;
+  --bone: #d8d2c0; --muted: #8b8676;
+  --acid: #cfc7a4;      /* вместо кислотной зелени — старая бумага */
+  --blood: #b23a2e; --gold: #c9a455; --xp: #7e93a0; --steel: #c9cdd0;
+  --display: "Oswald", "Arial Narrow", "Unbounded", system-ui, sans-serif;
+}
+body.grim h1, body.grim h2, body.grim .panel-title, body.grim .card .name, body.grim .mode b, body.grim .stage .sname, body.grim button,
+body.grim #toast, body.grim #combo-txt, body.grim .bigscore, body.grim .chest-card .name, body.grim #evo-name, body.grim .bonesline, body.grim .shop-h, body.grim #boss-name { text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; }
+/* тьма по краям и зерно — поверх игры, под интерфейсом (камера всегда центрирована на герое) */
+body.grim #game::before, body.grim #game::after { content: ""; position: fixed; inset: 0; pointer-events: none; }
+body.grim #game::before { background: radial-gradient(ellipse 78% 78% at 50% 50%, transparent 34%, #05060499 68%, #030403e6 100%); }
+body.grim #game::after { opacity: .11; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .6 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"); }
+body.grim .overlay { background: #070706f2; }
+body.grim .overlay.menu { background: radial-gradient(ellipse at 50% 18%, #23211c 0%, #080807 72%); }
+body.grim .menu h1 { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--bone); filter: none; text-shadow: 3px 3px 0 #6e1d16; letter-spacing: 3px; }
+body.grim button { border-width: 2px; border-radius: 6px; box-shadow: 0 3px 0 #000; }
+body.grim button.secondary { background: #3a3832; color: var(--bone); }
+body.grim .card, body.grim .mode, body.grim .stage, body.grim .shopcard, body.grim .chest-card, body.grim #evo, body.grim .cx, body.grim .ach { border-radius: 6px; border-width: 2px; box-shadow: 0 4px 0 #000; background: var(--panel); }
+body.grim .card .icon, body.grim .card.shape .icon, body.grim .card.trinket .icon, body.grim .chest-card .icon { border-radius: 4px; background: #2a2823; filter: saturate(.55) contrast(1.05); }
+body.grim .card .tag, body.grim .card.shape .tag, body.grim .card.trinket .tag { color: var(--muted); }
+body.grim .card .new { background: var(--blood); color: #f3ece0; }
+body.grim .card.combo, body.grim .shopcard.blade.active { border-color: var(--gold); box-shadow: 0 4px 0 #000; }
+body.grim .mode svg { stroke: var(--bone); }
+body.grim #hud .bar.hp .fill { background: linear-gradient(#b8463a, #7d241c); }
+body.grim .xp .fill { background: linear-gradient(90deg, #4f6470, var(--xp)); }
+body.grim .xprow .lvl { color: var(--muted); }
+body.grim .items .slot, body.grim .items .slot.trinket { border-radius: 3px; background: #23211dcc; filter: saturate(.6); }
+body.grim #combo-txt, body.grim #combo.hot #combo-txt { color: var(--bone); }
+body.grim #combo.wild #combo-txt { color: #d2493b; }
+body.grim #combo-fill { background: var(--blood); }
+body.grim .goal-bar i { background: var(--bone); }
+body.grim .chip.on { border-color: #d8d2c066; } body.grim .chip.on::before { background: var(--bone); box-shadow: none; }
+body.grim .stage .sstat { color: var(--bone); }
+body.grim .chest-rays { background: repeating-conic-gradient(from 0deg, #c9a45526 0 9deg, transparent 9deg 22deg); }
+body.grim .hub-back { color: var(--muted); }
+
+/* --- рация и звёзды (сюжет) --- */
+#radio { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 18px); transform: translateX(-50%); z-index: 6; pointer-events: none; width: min(460px, calc(100vw - 32px));
+  padding: 9px 12px; border: 2px solid #000; border-left: 0; border-right: 0; background: #0b0d0acc; font: 500 14px/1.4 var(--mono); color: var(--bone); transition: opacity .4s; }
+#radio.out { opacity: 0; }
+#radio .radio-tag { display: block; font: 700 10px var(--mono); letter-spacing: 2px; text-transform: uppercase; color: var(--blood); margin-bottom: 2px; }
+#radio .radio-tag::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--blood); animation: blink .8s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+@media (max-width: 600px) and (orientation: portrait) { #radio { bottom: auto; top: calc(env(safe-area-inset-top) + 170px); } }
+.stars { font-size: 34px; letter-spacing: 6px; color: var(--gold); text-shadow: 0 3px 0 #000; } .stars i { font-style: normal; color: #ffffff26; }

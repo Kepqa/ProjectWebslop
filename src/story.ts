@@ -28,11 +28,12 @@ export interface StoryMap extends GridMap {
   loot: Pt[];
 }
 
-export interface ObjectiveDef { kind: 'reach' | 'hold'; icon: string; label: string; dur: number }
+/** radio — реплика по рации, когда цель становится текущей. */
+export interface ObjectiveDef { kind: 'reach' | 'hold'; icon: string; label: string; dur: number; radio?: string }
 export const OBJECTIVES: ObjectiveDef[] = [
   { kind: 'reach', icon: '🔑', label: 'Найди ключ-карту', dur: 0 },
-  { kind: 'hold', icon: '⚡', label: 'Запусти генератор — стой в круге', dur: 30 },
-  { kind: 'hold', icon: '🚪', label: 'Открой выход — держись!', dur: 40 },
+  { kind: 'hold', icon: '⚡', label: 'Запусти генератор — стой в круге', dur: 30, radio: 'Карта есть, но замок обесточен. Генератор в подвале. Заведёшь — услышит весь корпус.' },
+  { kind: 'hold', icon: '🚪', label: 'Открой выход — держись!', dur: 40, radio: 'Свет дали. Теперь к выходу — дверь открывается медленно. Держи её, пока не щёлкнет.' },
 ];
 
 function rng(seed: number) {
@@ -419,33 +420,39 @@ export interface Chapter {
   name: string; goal: string; ready: boolean; stage: StageDef; gen: (seed: number) => StoryMap; objectives: ObjectiveDef[];
   /** На каком расстоянии (клетки) спящие замечают героя даже без шума. */
   sight: number;
+  /** Первая реплика по рации и время на три звезды, с. */
+  intro: string; par: number;
 }
 
 export const CHAPTERS: Chapter[] = [
-  { name: 'Здание', goal: 'Прорвись к выходу', ready: true, stage: BUILDING_STAGE, gen: (s) => genBuilding(s), objectives: OBJECTIVES, sight: 0 },
+  { name: 'Здание', goal: 'Прорвись к выходу', ready: true, stage: BUILDING_STAGE, gen: (s) => genBuilding(s), objectives: OBJECTIVES, sight: 0, par: 300,
+    intro: 'Если кто-то слышит: выход из корпуса на магнитном замке. Ключ-карта — на посту охраны.' },
   {
-    name: 'Город', goal: 'Пересеки город до эвакуации', ready: true, stage: CITY_STAGE, gen: (s) => genCity(s, false), sight: 9,
+    name: 'Город', goal: 'Пересеки город до эвакуации', ready: true, stage: CITY_STAGE, gen: (s) => genCity(s, false), sight: 9, par: 330,
+    intro: 'Эвакуация — с площадки за радиовышкой. Через центр не пройти. Иди к перекрёстку.',
     objectives: [
       { kind: 'reach', icon: '🚧', label: 'Пробейся к перекрёстку', dur: 0 },
-      { kind: 'hold', icon: '📻', label: 'Поймай сигнал на радиовышке', dur: 30 },
-      { kind: 'hold', icon: '🚁', label: 'Продержись до эвакуации', dur: 45 },
+      { kind: 'hold', icon: '📻', label: 'Поймай сигнал на радиовышке', dur: 30, radio: 'Перекрёсток твой. Вертолёт не знает, где ты, — поднимись к вышке и дай сигнал.' },
+      { kind: 'hold', icon: '🚁', label: 'Продержись до эвакуации', dur: 45, radio: 'Сигнал приняли, борт в воздухе. Орда идёт на тот же звук. Держи площадку.' },
     ],
   },
   {
-    name: 'Мародёрство', goal: 'Обыщи дома и найди карту', ready: true, stage: LOOT_STAGE, gen: (s) => genCity(s, true), sight: 9,
+    name: 'Мародёрство', goal: 'Обыщи дома и найди карту', ready: true, stage: LOOT_STAGE, gen: (s) => genCity(s, true), sight: 9, par: 420,
+    intro: 'До убежища три дня пешком. Нужны лекарства, еда и карта. Начни с аптеки.',
     objectives: [
-      { kind: 'reach', icon: '💊', label: 'Обыщи аптеку', dur: 0 },
-      { kind: 'reach', icon: '🛒', label: 'Обыщи магазин', dur: 0 },
-      { kind: 'reach', icon: '🗺️', label: 'Найди карту в офисе', dur: 0 },
-      { kind: 'hold', icon: '🏃', label: 'Уходи — держи двор', dur: 35 },
+      { kind: 'hold', icon: '💊', label: 'Обыщи аптеку', dur: 7 },
+      { kind: 'hold', icon: '🛒', label: 'Обыщи магазин', dur: 8, radio: 'Антибиотики есть. Магазин — через двор. Витрины выбиты, внутри кто-то ходит.' },
+      { kind: 'hold', icon: '🗺️', label: 'Найди карту в офисе', dur: 9, radio: 'Консервов хватит. Карта области висела в конторе землемера.' },
+      { kind: 'hold', icon: '🏃', label: 'Уходи — держи двор', dur: 35, radio: 'Карта у тебя, но в конторе сработала сигнализация. Двор — единственный выход.' },
     ],
   },
   {
-    name: 'Деревня', goal: 'Найди рабочую машину', ready: true, stage: VILLAGE_STAGE, gen: (s) => genVillage(s), sight: 10,
+    name: 'Деревня', goal: 'Найди рабочую машину', ready: true, stage: VILLAGE_STAGE, gen: (s) => genVillage(s), sight: 10, par: 390,
+    intro: 'По карте здесь деревня, была техника. Найди то, что ещё заводится. Собаки тут голодные.',
     objectives: [
       { kind: 'hold', icon: '🚜', label: 'Осмотри трактор', dur: 15 },
-      { kind: 'hold', icon: '🛻', label: 'Осмотри грузовик', dur: 20 },
-      { kind: 'hold', icon: '🚙', label: 'Почини пикап — держись!', dur: 40 },
+      { kind: 'hold', icon: '🛻', label: 'Осмотри грузовик', dur: 20, radio: 'Трактор сухой, ни капли. У амбара стоял грузовик — проверь его.' },
+      { kind: 'hold', icon: '🚙', label: 'Почини пикап — держись!', dur: 40, radio: 'У грузовика пробит картер. Остался пикап у дома фермера. Заводить придётся долго и громко.' },
     ],
   },
 ];

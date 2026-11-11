@@ -64,7 +64,8 @@ export class Hud {
   show(coop = false) {
     $('hud').classList.remove('hidden');
     $('hud').classList.toggle('coop', coop);
-    for (const id of ['levelup', 'end', 'chest', 'evo']) $(id).classList.add('hidden');
+    for (const id of ['levelup', 'end', 'chest', 'evo', 'radio']) $(id).classList.add('hidden');
+    clearInterval(this.radioTimer);
     this.chestQueue = []; clearTimeout(this.evoTimer);
     this.closeModals();
   }
@@ -220,6 +221,21 @@ export class Hud {
     const syn = activeSynergies(levels).map((x) => `<span class="syn" title="${x.name}: ${x.desc}">${x.icon}</span>`).join('');
     const group = (list: UpgradeDef[], n: number) => (list.length ? `<div class="slots">${list.map(slot).join('')}${list.length >= n ? '<i class="full">макс</i>' : ''}</div>` : '');
     this.itemsEl.innerHTML = group(blade, SLOTS.blade) + group(trink, SLOTS.trinket) + (syn ? `<div class="slots">${syn}</div>` : '');
+  }
+
+  // ---------- Рация: реплика печатается по буквам ----------
+  private radioTimer = 0;
+  radio(text: string) {
+    const el = $('radio'), body = $('radio-text');
+    clearInterval(this.radioTimer);
+    el.classList.remove('hidden', 'out');
+    let i = 0;
+    body.textContent = '';
+    this.radioTimer = window.setInterval(() => {
+      i += 2; body.textContent = text.slice(0, i);
+      if (i % 6 === 0 && i < text.length) sfx.play('card', 0.25, 0.7);
+      if (i >= text.length + 110) { clearInterval(this.radioTimer); el.classList.add('out'); setTimeout(() => el.classList.add('hidden'), 400); }
+    }, 34);
   }
 
   // ---------- Сундук: дробь, вспышка, карточка ----------

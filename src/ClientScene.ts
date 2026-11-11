@@ -4,7 +4,7 @@ import { sfx, type SfxName } from './sfx';
 import { session } from './session';
 import { decodeSnap, ZF, type Msg, type Net } from './net';
 import { ChunkView } from './chunks';
-import { Effects, EMITTERS, drawTele, drawTrail, trailLife, type TrailSeg, type Tele } from './effects';
+import { drawWarnings, Effects, EMITTERS, drawTele, drawTrail, trailLife, type TrailSeg, type Tele } from './effects';
 import { STAGES, STAGE_TIME, loadProgress, saveProgress, type StageDef } from './stages';
 import { UPGRADES, computeStats, type Levels, type Stats } from './upgrades';
 import { addBones, loadMeta, metaBonus } from './meta';
@@ -120,6 +120,7 @@ export class ClientScene extends Phaser.Scene {
     this.mateImg = this.add.image(0, 0, 'player').setScale(1 / S).setDepth(5).setOrigin(22 / 46, 0.5);
     this.trailG = this.add.graphics().setDepth(7);
     this.fxG = this.add.graphics().setDepth(8);
+    this.fxG.setBlendMode(Phaser.BlendModes.NORMAL);
 
     this.hud = new Hud();
     this.hud.show(true);
@@ -343,6 +344,7 @@ export class ClientScene extends Phaser.Scene {
         break;
       }
       case 'g': this.segs.push({ x1: n(1), y1: n(2), x2: n(3), y2: n(4), born: now, kind: (['blade', 'dull', 'echo'] as const)[n(5)], width: n(6), color: n(7) || undefined }); break;
+      case 'R': this.hud.radio(e[1] as string); break;
       case 'n': this.vfx.num(n(1), n(2), String(e[3]), !!n(4)); break;
       case 'B': this.burns.push({ x1: n(1), y1: n(2), x2: n(3), y2: n(4), until: now + n(5), w: n(6) }); break;
     }
@@ -539,6 +541,7 @@ export class ClientScene extends Phaser.Scene {
     for (const v of this.vortices) drawVortex(fg, v.x, v.y, v.r, (v.until - now) / v.dur, now);
     if (this.stats.chargeMul > 0) for (const s of this.strokes.values()) if (!s.moved) drawCharge(fg, s.px, s.py, s.charged, Math.min(1, (performance.now() - s.lastT) / 500), now);
     this.vfx.draw(fg, now);
+    if (this.alive) drawWarnings(fg, this.cameras.main, this.dpr, this.tele, this.projs.filter((p) => p.kind < 2), now);
     this.hud.setBoss(this.hdr.boss?.[0] ?? null, this.hdr.boss?.[1] ?? 0);
 
     this.controls.render(this.hud, !this.paused && !this.over && this.alive);

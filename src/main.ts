@@ -42,7 +42,8 @@ function cards(wrapId: string, onPick: (p: Pick) => void, opts: { story?: boolea
   };
   if (opts.story) CHAPTERS.forEach((ch, i) => {
     const locked = !ch.ready || (i > (p.story ?? 0) && !isDev());
-    const st = !ch.ready ? 'Скоро' : locked ? 'Закрыто' : (p.story ?? 0) > i ? 'Пройдена' : 'Играть';
+    const stars = p.stars?.[i] ?? 0;
+    const st = !ch.ready ? 'Скоро' : locked ? 'Закрыто' : (p.story ?? 0) > i ? `Пройдена ${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}` : 'Играть';
     add(`s1 ${ch.ready ? '' : 'locked-soon'}`, `<span class="snum">Глава ${i + 1}</span><span class="sname">${ch.name}</span><span class="sdesc">${ch.goal}</span><span class="sstat">${st}</span>`, locked, { mode: 'story', stage: 0, chapter: i });
   });
   if (opts.survival) STAGES.forEach((st, i) => {
@@ -197,7 +198,7 @@ function showMenu(leaveRoom: boolean) {
   stopScenes();
   if (leaveRoom) closeNet();
   $('hud').classList.add('hidden');
-  for (const id of ['levelup', 'end', 'pause-ov', 'vote', 'wait', 'countdown', 'chest', 'evo']) $(id).classList.add('hidden');
+  for (const id of ['levelup', 'end', 'pause-ov', 'vote', 'wait', 'countdown', 'chest', 'evo', 'radio']) $(id).classList.add('hidden');
   for (const id of ['joy-base', 'joy-knob']) $(id).style.display = 'none';
   document.body.style.background = '';
   renderStages();
@@ -316,12 +317,13 @@ $('set-music').addEventListener('click', () => { sfx.unlock(); sfx.setMusic(!sfx
 
 // Настройки: мрачный стиль и режим для левши
 const syncSet = () => {
-  $('set-gloomy').classList.toggle('on', settings.gloomy);
+  $('set-gloomy').classList.toggle('on', settings.grim);
+  document.body.classList.toggle('grim', settings.grim);
   $('set-lefty').classList.toggle('on', settings.lefty);
   document.body.classList.toggle('lefty', settings.lefty);
 };
 syncSet();
-$('set-gloomy').addEventListener('click', () => { settings.gloomy = !settings.gloomy; saveSettings(); syncSet(); });
+$('set-gloomy').addEventListener('click', () => { settings.grim = !settings.grim; saveSettings(); syncSet(); });
 $('set-lefty').addEventListener('click', () => { settings.lefty = !settings.lefty; saveSettings(); syncSet(); });
 
 // Навигация меню

@@ -5,7 +5,7 @@ import { sfx, type SfxName } from './sfx';
 import { session } from './session';
 import { SnapWriter, ZF, type Msg, type Net } from './net';
 import { ChunkView } from './chunks';
-import { Effects, EMITTERS, drawTele, drawTrail, trailLife, type EmitterName, type Tele } from './effects';
+import { Effects, EMITTERS, drawTele, drawTrail, drawWarnings, trailLife, type EmitterName, type Tele } from './effects';
 import { STAGES, STAGE_TIME, loadProgress, saveProgress, type StageDef } from './stages';
 import { UPGRADES, SYNERGIES, computeStats, offerPool, rollChoices, type Levels, type Stats, type UpgradeDef } from './upgrades';
 import { S, WALK_FRAMES, ZLOOK, ZTYPES, makeTextures, zOrigin, type ZType } from './textures';
@@ -45,7 +45,7 @@ const HIT_ASSIST = 6;
 export const SLAM_R = 180;
 export const BOMB_R = 105;
 const CELL = 64;
-const MAX_ZOMBIES = 340;
+const MAX_ZOMBIES = 480;
 const BARREL_R = 14;
 const BARREL_BLAST = 130;
 const BLADE_KNOCK = 260;
@@ -167,6 +167,7 @@ export class GameScene extends Phaser.Scene {
   private falls = 0; private rec = { kills: 0, bosses: 0, falls: 0 }; private lifeAt = 0;
   private combo = 0; private comboT = 0; private bestCombo = 0; private score = 0; private frenzyT = 0; private milestone = 0;
   private burnTick = 0;
+  private chase = 0; private chaseAt = 0; private chaseWarned = false;
   private fresh: AchDef[] = [];
   private ev: unknown[][] = [];
   private snapAt = 0; private seq = 0;
@@ -227,6 +228,7 @@ export class GameScene extends Phaser.Scene {
 
     this.trailG = this.add.graphics().setDepth(7);
     this.fxG = this.add.graphics().setDepth(8);
+    this.fxG.setBlendMode(Phaser.BlendModes.NORMAL);
     this.fxG2 = this.add.graphics().setDepth(14);
 
     this.cameras.main.startFollow(this.me.img, false, 1, 1);
@@ -260,6 +262,8 @@ export class GameScene extends Phaser.Scene {
     if (this.map) {
       this.placeDormant();
       this.toast(`Глава ${this.chapter + 1}: ${CHAPTERS[this.chapter].goal}`, 2600);
+      const intro = CHAPTERS[this.chapter].intro;
+      this.time.delayedCall(1200, () => { this.hud.radio(intro); this.E('R', intro); });
     } else this.toast(`${this.stage.name}${this.coop ? ' · кооп' : ''} — 10 волн`, 2200);
   }
 
@@ -298,6 +302,7 @@ export class GameScene extends Phaser.Scene {
     this.falls = 0; this.rec = { kills: 0, bosses: 0, falls: 0 }; this.lifeAt = 0;
     this.combo = 0; this.comboT = 0; this.bestCombo = 0; this.score = 0; this.frenzyT = 0; this.milestone = 0;
     this.fresh = [];
+    this.chase = 0; this.chaseAt = 0; this.chaseWarned = false;
     this.props = []; this.packSeq = 0; this.packSpeed.clear(); this.packC.clear();
     this.chronoUntil = 0; this.barrelSpawnT = 4; this.markPulse = 0;
   }
@@ -1474,11 +1479,11 @@ export class GameScene extends Phaser.Scene {
     const coopMul = this.players.length > 1 ? 1.4 : 1;
     const w = this.wave;
     // с первой секунды на экране есть кого резать; дальше сложность растёт числом, а не «жиром»
-    const rate = Math.min(34 * coopMul, (1.6 + w * 1.6 + (w * w) * 0.17) * this.stage.rateMul * coopMul);
+    const rate = Math.min(52 * coopMul, (1.8 + w * 2.6 + (w * w) * 0.26) * this.stage.rateMul * coopMul);
     this.spawnAcc += rate * dt;
     // стаями по 5–10: идут кучкой одним темпом
-    while (this.spawnAcc >= 8) {
-      const n = 5 + Math.floor(Math.random() * 6);
+    while (this.spawnAcc >= 10) {
+      const n = 7 + Math.floor(Math.random() * 8);
       this.spawnAcc -= n;
       const type = this.pickType();
       const around = this.randomAlive();
@@ -1506,7 +1511,7 @@ export class GameScene extends Phaser.Scene {
       for (const pl of this.alivePlayers()) {
         // орда — 4 стаи с разных сторон
         for (let k = 0; k < 4; k++) {
-          const pack = ++this.packSeq, n = 4 + Math.floor(w * 0.8), a0 = (k / 4) * Math.PI * 2;
+          const pack = ++this.packSeq, n = 8 + Math.floor(w * 1.4), a0 = (k / 4) * Math.PI * 2;
           for (let i = 0; i < n; i++) this.spawnZombie(i % 3 === 0 ? this.pickType() : i % 2 ? 'runner' : 'walker', { angle: a0 + (i / n - 0.5) * 0.5, extra: 60, around: pl, pack });
         }
       }
@@ -2593,12 +2598,15 @@ export class GameScene extends Phaser.Scene {
     const bones = this.bonesEarned(true);
     addBones(bones);
     prog.story = Math.max(prog.story ?? 0, this.chapter + 1);
+    const par = this.chap.par, stars = this.elapsed <= par ? 3 : this.elapsed <= par * 1.5 ? 2 : 1;
+    prog.stars = { ...(prog.stars ?? {}), [this.chapter]: Math.max(prog.stars?.[this.chapter] ?? 0, stars) };
     saveProgress(prog);
+    const starHtml = `<div class="stars">${'★'.repeat(stars)}<i>${'★'.repeat(3 - stars)}</i></div>${stars < 3 ? `<div class="runstats"><span>Три звезды — быстрее <b>${fmt(par)}</b></span></div>` : ''}`;
     sfx.play('win');
     this.vfx.burst('magic', 60, this.me.x, this.me.y);
     const next = CHAPTERS[this.chapter + 1];
     const title = `Глава ${this.chapter + 1} пройдена!`;
-    const text = this.summary(true) + (next ? `<br>Дальше: <b>${next.name}</b>${next.ready ? '' : ' — скоро'}` : '');
+    const text = starHtml + this.summary(true);
     this.net?.send({ t: 'end', win: true, title, text: this.summary(true), story: this.chapter, bones, life: this.lifeSummary(true) });
     this.hud.showEnd({
       title, text, win: true,
@@ -2732,8 +2740,11 @@ export class GameScene extends Phaser.Scene {
       if (z.boss && z.awake && (!boss || z.final)) boss = z;
       if (z.state === 'windup') this.tele.push([0, z.x | 0, z.y | 0, +z.dirX.toFixed(2), +z.dirY.toFixed(2), z.r]);
       else if (z.state === 'slam') this.tele.push([1, z.x | 0, z.y | 0, +(1 - z.stateT / 0.9).toFixed(2)]);
-      else if (z.state === 'charge' || z.state === 'jump') this.tele.push([2, z.tgtX | 0, z.tgtY | 0, z.type === 'leaper' ? 160 : 34]);
+      else if (z.state === 'charge' || z.state === 'jump') { this.tele.push([2, z.tgtX | 0, z.tgtY | 0, z.type === 'leaper' ? 160 : 34]); this.tele.push([4, z.x | 0, z.y | 0, 0]); }
       else if (z.state === 'fuse') this.tele.push([3, z.x | 0, z.y | 0]);
+      // плевун вот-вот плюнет; босс рядом, но за экраном
+      else if (z.type === 'spitter' && z.awake && z.cd1 < 0.8 && Math.hypot(z.x - z.tgt.x, z.y - z.tgt.y) < 440) this.tele.push([4, z.x | 0, z.y | 0, 1]);
+      else if (z.boss && z.awake) this.tele.push([4, z.x | 0, z.y | 0, 4]);
     }
     for (const t of this.tele) drawTele(fg, t, this.elapsed, SLAM_R, BOMB_R);
     if (this.map && this.objIdx < this.objs.length) {
@@ -2745,6 +2756,7 @@ export class GameScene extends Phaser.Scene {
     this.bossInfo = boss ? [boss.boss!, +(boss.hp / boss.maxHp).toFixed(3)] : null;
     this.hud.setBoss(this.bossInfo?.[0] ?? null, this.bossInfo?.[1] ?? 0);
     this.vfx.draw(fg, this.elapsed);
+    if (this.me.alive) drawWarnings(this.fxG2, this.cameras.main, this.dpr, this.tele, this.projs.filter((p) => !p.dead && !p.friendly), this.elapsed);
 
     this.controls.render(this.hud, !this.paused && !this.over && this.me.alive);
     this.look.follow(this.me.x, this.me.y);
@@ -2785,7 +2797,7 @@ export class GameScene extends Phaser.Scene {
     }
     // удержание: прогресс растёт внутри круга и медленно падает снаружи
     if (inside && this.objProg === 0) {
-      this.toast(`${o.icon} Держите круг! Орда идёт`, 2000);
+      this.toast(o.dur <= 10 ? `${o.icon} Обыск… шум привлекает мертвецов` : `${o.icon} Держите круг! Орда идёт`, 2000);
       this.snd('boss', 0.6);
       if (this.objIdx === this.objs.length - 1) for (const z of this.zombies) if (z.boss && !z.awake) this.wake(z);
     }
@@ -2794,12 +2806,12 @@ export class GameScene extends Phaser.Scene {
       // волны к точке удержания
       this.holdTick -= dt;
       if (this.holdTick <= 0) {
-        this.holdTick = Phaser.Math.Linear(4.2, 2.6, this.objProg) * (this.players.length > 1 ? 0.8 : 1);
+        this.holdTick = Phaser.Math.Linear(2.6, 1.4, this.objProg) * (this.players.length > 1 ? 0.8 : 1);
         const around = this.nearestPlayer(wx, wy, true);
         const pos = this.findSpawn(around, 0, undefined, undefined, TILE * (9 + Math.random() * 5));
-        const n = 3 + Math.floor(this.objIdx + this.objProg * 3);
+        const n = 6 + Math.floor(this.objIdx * 2 + this.objProg * 7);
         const pack = ++this.packSeq;
-        if (pos && this.zombies.length < 120) for (let i = 0; i < n; i++) this.spawnZombie(this.pickType(), { at: pos, around, pack });
+        if (pos && this.zombies.length < 340) for (let i = 0; i < n; i++) this.spawnZombie(this.pickType(), { at: pos, around, pack });
       }
     }
     if (this.objProg >= 1) this.completeObjective(wx, wy);
@@ -2818,6 +2830,18 @@ export class GameScene extends Phaser.Scene {
     for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; this.dropGem(x + Math.cos(a) * 70, y + Math.sin(a) * 70, 4, false); }
     this.dropGem(x, y + 50, 0, false, true);
     this.objIdx++; this.objProg = 0; this.holdTick = 0;
+    this.chase = 0; this.chaseWarned = false;
+    const next = this.objs[this.objIdx];
+    if (next?.radio) { this.hud.radio(next.radio); this.E('R', next.radio); }
+    // засада: шум этапа стягивает стаи с трёх сторон
+    this.timers.push({ at: this.elapsed + 2.2, fn: () => {
+      const around = this.randomAlive(), a0 = Math.random() * 6.28;
+      for (let k = 0; k < 3; k++) {
+        const pos = this.findSpawn(around, 0, undefined, a0 + k * 2.09), pack = ++this.packSeq;
+        if (pos) for (let i = 0; i < 7 + this.objIdx * 2; i++) this.spawnZombie(i % 3 === 0 ? this.pickType() : 'walker', { at: pos, around, pack });
+      }
+      this.snd('boss', 0.45);
+    } });
   }
 
   // ---------- Сюжет: спящие группы, лазы, шум ----------
@@ -2826,7 +2850,7 @@ export class GameScene extends Phaser.Scene {
     for (const g of m.groups) {
       const types = this.stage.weights(g.p);
       const pack = ++this.packSeq;
-      for (let i = 0; i < g.n; i++) {
+      for (let i = 0; i < g.n * 2 + 2; i++) {
         let r = Math.random() * types.reduce((a, b) => a + b[1], 0), t: ZType = 'walker';
         for (const [k, v] of types) if ((r -= v) <= 0) { t = k; break; }
         this.spawnZombie(t, { at: { x: (g.x + 0.5) * TILE, y: (g.y + 0.5) * TILE }, around: this.me, dormant: true, pack });
@@ -2858,8 +2882,9 @@ export class GameScene extends Phaser.Scene {
     this.progress = this.storyProgress();
     this.entryTick -= dt;
     if (this.entryTick > 0) return;
-    this.entryTick = Phaser.Math.Linear(4, 2.2, this.progress) * (this.players.length > 1 ? 0.75 : 1);
-    if (this.zombies.length > 110) return;
+    this.entryTick = Phaser.Math.Linear(2.1, 1.1, this.progress) * (this.players.length > 1 ? 0.75 : 1);
+    this.chaseTick(this.entryTick);
+    if (this.zombies.length > 300) return;
     const near = this.map!.entries.filter((e) => this.alivePlayers().some((p) => {
       const d = Math.hypot((e.x + 0.5) * TILE - p.x, (e.y + 0.5) * TILE - p.y) / TILE;
       return d > 5 && d < 24;
@@ -2868,21 +2893,39 @@ export class GameScene extends Phaser.Scene {
       // нет лазов рядом — группа подходит из-за края экрана
       const around = this.randomAlive(), pos = this.findSpawn(around);
       const pack = ++this.packSeq;
-      if (pos) for (let i = 0; i < 3 + Math.floor(this.progress * 3); i++) this.spawnZombie(this.pickType(), { at: pos, around, pack });
+      if (pos) for (let i = 0; i < 6 + Math.floor(this.progress * 7); i++) this.spawnZombie(this.pickType(), { at: pos, around, pack });
       return;
     }
     const e = near[Math.floor(Math.random() * near.length)];
-    const n = 2 + Math.floor(Math.random() * (2 + this.progress * 3));
+    const n = 4 + Math.floor(Math.random() * (4 + this.progress * 6));
     const pack = ++this.packSeq;
     const w = this.stage.weights(this.progress);
     const ex = (e.x + 0.5) * TILE, ey = (e.y + 0.5) * TILE;
     for (let i = 0; i < n; i++) {
       let r = Math.random() * w.reduce((a, b) => a + b[1], 0), t: ZType = 'walker';
       for (const [k, v] of w) if ((r -= v) <= 0) { t = k; break; }
-      this.timers.push({ at: this.elapsed + i * 0.35, fn: () => this.spawnZombie(t, { at: { x: ex, y: ey }, around: this.nearestPlayer(ex, ey, true), exact: true, pack }) });
+      this.timers.push({ at: this.elapsed + i * 0.22, fn: () => this.spawnZombie(t, { at: { x: ex, y: ey }, around: this.nearestPlayer(ex, ey, true), exact: true, pack }) });
     }
     this.burst('dust', 10, ex, ey);
     this.snd('crate', 0.6, ex, ey, 0.6);
+  }
+
+  /**
+   * Орда по следу: пока цель «дойти» не взята, растёт погоня. Сначала предупреждение, потом из-за спины
+   * приходят всё более крупные стаи — стоять и зачищать карту невыгодно, надо двигаться к цели.
+   */
+  private chaseTick(dt: number) {
+    const o = this.objs[this.objIdx];
+    if (!o || (o.kind === 'hold' && this.objProg > 0)) { this.chase = 0; return; }
+    this.chase += dt;
+    if (this.chase < 28) return;
+    if (!this.chaseWarned) { this.chaseWarned = true; this.toast('Орда идёт по следу — не стой', 2200); this.snd('boss', 0.5); this.hud.radio('Они слышат тебя. Чем дольше стоишь — тем их больше.'); }
+    if (this.elapsed < this.chaseAt) return;
+    this.chaseAt = this.elapsed + 8;
+    const around = this.randomAlive(), pos = this.findSpawn(around);
+    if (!pos || this.zombies.length > 380) return;
+    const n = Math.min(26, 9 + Math.floor((this.chase - 28) / 5)), pack = ++this.packSeq;
+    for (let i = 0; i < n; i++) this.spawnZombie(i % 4 === 0 ? this.pickType() : i % 2 ? 'runner' : 'walker', { at: pos, around, pack });
   }
 
   /** Спящий зомби просыпается от шума игрока (бег 40 клеток, шаг 10) или от урона. */

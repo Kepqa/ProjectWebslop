@@ -468,9 +468,10 @@ function shade(c: number, f: number) {
 }
 
 /** Рисует чанк в локальных координатах (0..CPX) — результат запекается в текстуру. */
-export function drawChunk(g: Phaser.GameObjects.Graphics, world: World, cx: number, cy: number, P: Palette) {
+export function drawChunk(g: Phaser.GameObjects.Graphics, world: World, cx: number, cy: number, P: Palette, grime = false) {
   const ox = cx * CPX, oy = cy * CPX;
   const r = mulberry32(hash(cx, cy, 99));
+  const r2 = mulberry32(hash(cx, cy, 7)); // отдельный генератор для грязи: яркий стиль не меняется
   const T = TILE;
   const lvl = (tx: number, ty: number) => (world.kind(tx, ty) === K_RAMP ? world.height(tx, ty) + 0.5 : world.height(tx, ty));
   const FC = P.floor;
@@ -520,6 +521,21 @@ export function drawChunk(g: Phaser.GameObjects.Graphics, world: World, cx: numb
       g.fillRect(px + r() * (T - 6), py + r() * (T - 6), 2 + r() * 5, 2 + r() * 4);
     }
     if (h === 0 && r() < 0.05) g.fillStyle(P.deco).fillCircle(px + 10 + r() * 28, py + 10 + r() * 28, 3 + r() * 4);
+    if (grime) {
+      // запустение: тёмные пятна, трещины, мусор, старая кровь
+      const q = r2();
+      if (q < 0.4) g.fillStyle(0x000000, 0.08 + r2() * 0.1).fillEllipse(px + r2() * T, py + r2() * T, 14 + r2() * 26, 10 + r2() * 20);
+      if (q > 0.86) {
+        let x0 = px + r2() * T, y0 = py + r2() * T;
+        g.lineStyle(1.5, 0x000000, 0.4);
+        for (let i = 0; i < 3; i++) { const x1 = x0 + (r2() - 0.5) * 26, y1 = y0 + (r2() - 0.5) * 26; g.lineBetween(x0, y0, x1, y1); x0 = x1; y0 = y1; }
+      } else if (q > 0.82) g.fillStyle(0xcfc8ad, 0.45).fillRect(px + 6 + r2() * 30, py + 6 + r2() * 30, 5 + r2() * 4, 4 + r2() * 5);
+      else if (q > 0.795) {
+        const bx = px + 10 + r2() * 28, by = py + 10 + r2() * 28;
+        g.fillStyle(0x5c0f0f, 0.55).fillEllipse(bx, by, 12 + r2() * 12, 8 + r2() * 8);
+        for (let i = 0; i < 4; i++) g.fillCircle(bx + (r2() - 0.5) * 30, by + (r2() - 0.5) * 30, 1 + r2() * 2);
+      }
+    }
     if (k === K_TOXIC) {
       const tox = (dx: number, dy: number) => world.kind(tx + dx, ty + dy) === K_TOXIC;
       // скругляем только внешние углы лужи
