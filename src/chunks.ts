@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import { S } from './textures';
-import { grim, toned } from './art';
 import { World, TILE, CH, CPX, K_CRATE, K_GRAVE, K_DOOR, K_DOOROPEN, key2, drawChunk, type Palette } from './world';
 
 /** Показывает чанки карты вокруг точки и картинки разрушаемых тайлов (ящики, могилы). */
@@ -10,7 +9,7 @@ export class ChunkView {
   tileImgs = new Map<number, Phaser.GameObjects.Image>();
 
   constructor(private scene: Phaser.Scene, private world: World, private palette: Palette) {
-    this.painter = toned(scene.make.graphics({}, false));
+    this.painter = scene.make.graphics({}, false);
     scene.events.once('shutdown', () => this.painter.destroy());
   }
 
@@ -40,7 +39,7 @@ export class ChunkView {
       const k2 = this.res();
       const g = this.painter;
       g.clear();
-      drawChunk(g, this.world, cx, cy, this.palette, grim());
+      drawChunk(g, this.world, cx, cy, this.palette);
       g.setScale(k2);
       const rt = this.scene.add.renderTexture(cx * CPX, cy * CPX, Math.ceil(CPX * k2), Math.ceil(CPX * k2))
         .setOrigin(0).setScale(1 / k2).setDepth(0);

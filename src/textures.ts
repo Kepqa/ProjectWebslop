@@ -1,5 +1,4 @@
 import Phaser from 'phaser';
-import { artKey, grim, mix, setTone, toned } from './art';
 
 /** Текстуры рисуются в S раз крупнее и уменьшаются при отрисовке — чётко на retina. */
 export const S = 2;
@@ -40,27 +39,18 @@ export function zOrigin(t: ZType) {
 }
 
 export function makeTextures(scene: Phaser.Scene) {
-  // текстуры живут в игре, а не в сцене: рисуем один раз на стиль, при смене стиля — заново
-  if (scene.registry.get('art') === artKey() && scene.textures.exists('dot')) return;
-  for (const k of (scene.registry.get('artKeys') as string[] | undefined) ?? []) if (scene.textures.exists(k)) scene.textures.remove(k);
-  const keys: string[] = [];
-  scene.registry.set('art', artKey()); scene.registry.set('artKeys', keys);
-  const g = toned(scene.make.graphics({}, false));
-  const gen = (key: string, w: number, h: number) => { g.generateTexture(key, Math.ceil(w * S), Math.ceil(h * S)); g.clear(); keys.push(key); };
+  if (scene.textures.exists('dot')) return;
+  const g = scene.make.graphics({}, false);
+  const gen = (key: string, w: number, h: number) => { g.generateTexture(key, Math.ceil(w * S), Math.ceil(h * S)); g.clear(); };
   const s = S;
-  const G = grim();
-
-  setTone(false);
 
   g.fillStyle(0xffffff).fillCircle(4 * s, 4 * s, 4 * s);
   gen('dot', 8, 8);
   g.fillStyle(0xffffff).fillRect(0, 0, 6 * s, 3 * s);
   gen('chip', 6, 3);
-  setTone(true);
 
   // Игроки: плащ, капюшон, клинок; 4 кадра шагов (второй игрок — оранжевый)
-  // яркий стиль — синий и оранжевый плащи; мрачный — выцветшая куртка, свои цвета у каждого игрока остаются различимы
-  for (const [key, c1, c2, c3] of (G ? [['player', 0x4d6a8a, 0x9fb6cc, 0xf1f3f5], ['player2', 0xa8672f, 0xd9a86a, 0xf1f3f5]] : [['player', 0x1864ab, 0x4dabf7, 0xd0ebff], ['player2', 0xc2410c, 0xffa94d, 0xffe8cc]]) as [string, number, number, number][]) {
+  for (const [key, c1, c2, c3] of [['player', 0x1864ab, 0x4dabf7, 0xd0ebff], ['player2', 0xc2410c, 0xffa94d, 0xffe8cc]] as const) {
     for (let f = 0; f <= WALK_FRAMES; f++) {
       const sw = f === WALK_FRAMES ? 0 : Math.sin((f / WALK_FRAMES) * Math.PI * 2);
       g.fillStyle(0x000000, 0.3).fillEllipse(21 * s, 24 * s, 34 * s, 30 * s);
@@ -114,13 +104,11 @@ export function makeTextures(scene: Phaser.Scene) {
   g.fillStyle(0xffa94d).fillRect(7 * s, 0, 2 * s, 3 * s);
   gen('grenade', 16, 17);
 
-  setTone(false);
   const gem = [{ x: 6 * s, y: 0 }, { x: 12 * s, y: 8 * s }, { x: 6 * s, y: 16 * s }, { x: 0, y: 8 * s }];
   g.fillStyle(0x66d9e8).fillPoints(gem, true);
   g.fillStyle(0xc5f6fa).fillTriangle(6 * s, 1 * s, 10 * s, 7 * s, 6 * s, 8 * s);
   g.lineStyle(1.5 * s, 0xffffff, 0.8).strokePoints(gem, true);
   gen('gem', 12, 16);
-  setTone(true);
 
   g.fillStyle(0x000000, 0.3).fillEllipse(14 * s, 25 * s, 28 * s, 8 * s);
   g.fillStyle(0xb5762b).fillRect(1 * s, 6 * s, 26 * s, 18 * s);
@@ -235,11 +223,7 @@ export function makeTextures(scene: Phaser.Scene) {
 function drawZombie(g: Phaser.GameObjects.Graphics, t: ZType, gen: (k: string, w: number, h: number) => void, broken = false, frame = -1) {
   const s = S;
   const L = ZLOOK[t];
-  const G = grim(), bossy = t === 'colossus' || t === 'brood' || t === 'leaper' || t === 'necro';
-  const { r, dark } = L;
-  // мрачный стиль: трупная бледная кожа вместо «мультяшной» зелени, глаза не светятся (кроме боссов)
-  const color = G && t !== 'ghost' ? mix(L.color, 0xe2dcc0, 0.62) : L.color;
-  const eye = G && !bossy ? 0xf3efdc : L.eye;
+  const { r, color, dark, eye } = L;
   const cloth = L.cloth ?? dark;
   const W = Math.ceil(r * 3.3), H = Math.ceil(r * 2.6);
   const cx = r * 1.25 * s, cy = (H / 2) * s, R = r * s;
@@ -276,8 +260,6 @@ function drawZombie(g: Phaser.GameObjects.Graphics, t: ZType, gen: (k: string, w
   // пятна крови (детерминированные)
   if (!ghost) {
     g.fillStyle(0x6b1a22, 0.75).fillCircle(cx - R * 0.3, cy + R * 0.35, R * 0.18).fillCircle(cx - R * 0.05, cy - R * 0.55, R * 0.12);
-    // мрачный стиль: одежда в крови и рванине
-    if (G) g.fillStyle(0x7a1414, 0.8).fillEllipse(cx + R * 0.05, cy + R * 0.15, R * 0.5, R * 0.75).fillCircle(cx - R * 0.45, cy - R * 0.2, R * 0.16);
   }
   g.lineStyle(Math.max(2, r * 0.12) * s, 0x0a0a0a, 0.9).strokeEllipse(cx - R * 0.15, cy, R * 1.35, R * 2.05);
   // особенности
@@ -316,8 +298,7 @@ function drawZombie(g: Phaser.GameObjects.Graphics, t: ZType, gen: (k: string, w
   }
   // глаза светятся
   const er = Math.max(1.6, r * 0.11) * s;
-  if (!G || bossy) g.fillStyle(eye, 0.35).fillCircle(hx + hr * 0.55, cy - hr * 0.42, er * 1.8).fillCircle(hx + hr * 0.55, cy + hr * 0.42, er * 1.8);
-  else g.fillStyle(0x000000, 0.55).fillCircle(hx + hr * 0.55, cy - hr * 0.42, er * 1.5).fillCircle(hx + hr * 0.55, cy + hr * 0.42, er * 1.5);
+  g.fillStyle(eye, 0.35).fillCircle(hx + hr * 0.55, cy - hr * 0.42, er * 1.8).fillCircle(hx + hr * 0.55, cy + hr * 0.42, er * 1.8);
   g.fillStyle(eye).fillCircle(hx + hr * 0.55, cy - hr * 0.42, er).fillCircle(hx + hr * 0.55, cy + hr * 0.42, er);
   gen(key, W, H);
   if (frame < 0 && !broken) drawHalf(g, t, gen);

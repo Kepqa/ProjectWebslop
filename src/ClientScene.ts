@@ -122,7 +122,6 @@ export class ClientScene extends Phaser.Scene {
     this.mateImg = this.add.image(0, 0, 'player').setScale(1 / S).setDepth(5).setOrigin(22 / 46, 0.5);
     this.trailG = this.add.graphics().setDepth(7);
     this.fxG = this.add.graphics().setDepth(8);
-    this.fxG.setBlendMode(Phaser.BlendModes.NORMAL);
 
     this.hud = new Hud();
     this.hud.show(true);

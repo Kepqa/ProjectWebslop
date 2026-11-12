@@ -319,8 +319,6 @@ $('set-music').addEventListener('click', () => { sfx.unlock(); sfx.setMusic(!sfx
 
 // Настройки: мрачный стиль и режим для левши
 const syncSet = () => {
-  $('set-gloomy').classList.toggle('on', settings.grim);
-  document.body.classList.toggle('grim', settings.grim);
   $('set-lefty').classList.toggle('on', settings.lefty);
   $('set-particles').classList.toggle('on', settings.particles);
   $('set-haptics').classList.toggle('on', settings.haptics);
@@ -328,7 +326,6 @@ const syncSet = () => {
   document.body.classList.toggle('lefty', settings.lefty);
 };
 syncSet();
-$('set-gloomy').addEventListener('click', () => { settings.grim = !settings.grim; saveSettings(); syncSet(); });
 $('set-particles').addEventListener('click', () => { settings.particles = !settings.particles; saveSettings(); syncSet(); });
 $('set-haptics').addEventListener('click', () => { settings.haptics = !settings.haptics; saveSettings(); syncSet(); haptic('level'); });
 $('set-lefty').addEventListener('click', () => { settings.lefty = !settings.lefty; saveSettings(); syncSet(); });

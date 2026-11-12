@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import { settings } from './settings';
-import { tone } from './art';
 
 /** Что летает в воздухе на уровне. */
 export type AmbientKind = 'pollen' | 'embers' | 'wisps' | 'dust' | 'ash' | 'rain' | 'leaves';
@@ -29,8 +28,7 @@ export class Ambient {
     const y = { onEmit: () => cam.worldView.y - 120 + Math.random() * (cam.worldView.height + 240) };
     const top = { onEmit: () => cam.worldView.y - 60 - Math.random() * 80 };
     const add = (tex: string, depth: number, cfg: Cfg) => {
-      const tint = Array.isArray(cfg.tint) ? (cfg.tint as number[]).map(tone) : cfg.tint;
-      this.ems.push(scene.add.particles(0, 0, tex, { x, y, ...cfg, tint }).setDepth(depth));
+      this.ems.push(scene.add.particles(0, 0, tex, { x, y, ...cfg }).setDepth(depth));
     };
     const fade = { onUpdate: (_p: unknown, _k: string, t: number) => Math.sin(t * Math.PI) }; // плавно появляется и гаснет
     switch (kind) {

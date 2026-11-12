@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import { S, ZLOOK, type ZType } from './textures';
-import { grim, tone } from './art';
 
 /** Визуальные эффекты, общие для хоста и гостя (гость воспроизводит их по сетевым событиям). */
 export type Fx =
@@ -21,7 +20,7 @@ export class Effects {
 
   constructor(private scene: Phaser.Scene) {
     const mk = (cfg: Phaser.Types.GameObjects.Particles.ParticleEmitterConfig, tex = 'dot') =>
-      scene.add.particles(0, 0, tex, { emitting: false, ...cfg, tint: Array.isArray(cfg.tint) ? (cfg.tint as number[]).map(tone) : cfg.tint }).setDepth(9);
+      scene.add.particles(0, 0, tex, { emitting: false, ...cfg }).setDepth(9);
     this.em = {
       gore: mk({ speed: { min: 80, max: 340 }, lifespan: { min: 280, max: 650 }, scale: { start: 0.7, end: 0 }, tint: [0x8c2f39, 0x5c1a22, 0x6b8f3a, 0xa61e4d] }),
       spark: mk({ speed: { min: 120, max: 380 }, lifespan: { min: 120, max: 320 }, scale: { start: 0.35, end: 0 }, tint: [0xffffff, 0xc5f6fa, 0x66d9e8], blendMode: 'ADD' }),
@@ -49,10 +48,10 @@ export class Effects {
   }
 
   ring(now: number, x: number, y: number, r: number, color: number, life: number, width?: number) {
-    this.fx.push({ kind: 'ring', x, y, r, color: tone(color), born: now, life, width });
+    this.fx.push({ kind: 'ring', x, y, r, color, born: now, life, width });
   }
   bolt(now: number, pts: number[]) { this.fx.push({ kind: 'bolt', pts, born: now, life: 0.2 }); }
-  poly(now: number, pts: { x: number; y: number }[], color: number) { this.fx.push({ kind: 'poly', pts, born: now, life: 0.5, color: tone(color) }); }
+  poly(now: number, pts: { x: number; y: number }[], color: number) { this.fx.push({ kind: 'poly', pts, born: now, life: 0.5, color }); }
   /** Волна формы свайпа: pts — точки относительно центра, масштаб растёт s0→s1. */
   wave(now: number, cx: number, cy: number, pts: number[], s1: number, life: number, fire: boolean) {
     this.fx.push({ kind: 'wave', cx, cy, pts, s0: 1, s1, born: now, life, fire });
@@ -99,12 +98,10 @@ export class Effects {
     const img = this.scene.add.image(x, y, type).setDepth(4.6).setScale(sc).setTintFill(0xffffff);
     this.scene.tweens.add({ targets: img, scale: sc * 1.55, alpha: 0, duration: 150, ease: 'Quad.easeOut', onComplete: () => img.destroy() });
     const big = look.r >= 26;
-    this.em.chunk.setParticleTint(tone(look.color));
+    this.em.chunk.setParticleTint(look.color);
     this.em.chunk.explode(big ? 16 : 8, x, y);
     this.em.gore.explode(big ? 18 : 8, x, y);
     this.ring(now, x, y, look.r + 16, look.color, 0.22, 4);
-    // мрачный стиль: смерть оставляет больше крови
-    if (grim()) this.splat(x + (Math.random() - 0.5) * 16, y + (Math.random() - 0.5) * 16, look.r * 0.8);
   }
 
   private slashes: Fx[] = [];
@@ -114,10 +111,10 @@ export class Effects {
   }
 
   splat(x: number, y: number, r: number) {
-    const s = this.scene.add.image(x, y, 'splat').setDepth(1).setRotation(Math.random() * 6.28).setScale(0).setAlpha(grim() ? 0.9 : 0.75);
+    const s = this.scene.add.image(x, y, 'splat').setDepth(1).setRotation(Math.random() * 6.28).setScale(0).setAlpha(0.75);
     this.scene.tweens.add({ targets: s, scale: r / 14 / S, duration: 160, ease: 'Back.easeOut' });
     this.splats.push(s);
-    if (this.splats.length > (grim() ? 320 : 140)) this.splats.shift()!.destroy();
+    if (this.splats.length > 140) this.splats.shift()!.destroy();
   }
 
   /** Анимация падения в пропасть: использует готовую картинку или создаёт новую. */
@@ -181,14 +178,12 @@ export function drawTrail(g: Phaser.GameObjects.Graphics, s: TrailSeg, now: numb
   }
   // Лента клинка: чем старше участок, тем он тоньше — хвост сам сходит на нет.
   // Скруглённые стыки, чтобы широкий след не рвался на поворотах.
-  // мрачный стиль: холодная сталь без неона
-  const G = grim();
-  const glow = G ? (s.kind === 'echo' ? 0x8f8aa8 : 0xc9cdd0) : s.kind === 'echo' ? 0xb197fc : s.color ?? 0x66d9e8;
+  const glow = s.kind === 'echo' ? 0xb197fc : s.color ?? 0x66d9e8;
   const k = a * a * (3 - 2 * a);
   const w = s.width * (0.25 + 0.75 * k);
-  if (!G) g.lineStyle(w * 2.1, glow, a * 0.13).lineBetween(s.x1, s.y1, s.x2, s.y2);
-  g.lineStyle(w * 1.15, glow, a * (G ? 0.38 : 0.55)).lineBetween(s.x1, s.y1, s.x2, s.y2);
-  g.fillStyle(glow, a * (G ? 0.38 : 0.55)).fillCircle(s.x2, s.y2, w * 0.575);
+  g.lineStyle(w * 2.1, glow, a * 0.13).lineBetween(s.x1, s.y1, s.x2, s.y2);
+  g.lineStyle(w * 1.15, glow, a * 0.55).lineBetween(s.x1, s.y1, s.x2, s.y2);
+  g.fillStyle(glow, a * 0.55).fillCircle(s.x2, s.y2, w * 0.575);
   const core = Math.max(1.5, w * 0.42);
   g.lineStyle(core, 0xffffff, Math.min(1, a * 1.3)).lineBetween(s.x1, s.y1, s.x2, s.y2);
   g.fillStyle(0xffffff, Math.min(1, a * 1.3)).fillCircle(s.x2, s.y2, core / 2);

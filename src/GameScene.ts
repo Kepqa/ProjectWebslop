@@ -232,7 +232,6 @@ export class GameScene extends Phaser.Scene {
 
     this.trailG = this.add.graphics().setDepth(7);
     this.fxG = this.add.graphics().setDepth(8);
-    this.fxG.setBlendMode(Phaser.BlendModes.NORMAL);
     this.fxG2 = this.add.graphics().setDepth(14);
 
     this.cameras.main.startFollow(this.me.img, false, 1, 1);
