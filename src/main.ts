@@ -14,6 +14,8 @@ import { BLADES, META, buyMeta, loadMeta, pickBlade } from './meta';
 import { ACHIEVEMENTS, LOCKED_BY, isUnlocked, loadAch, unlockedSet } from './achievements';
 import { SYNERGIES, UPGRADES, byId } from './upgrades';
 import { BUILD, BUILD_DATE, VERSION, checkUpdate } from './version';
+import { featureOn, type Feature } from './features';
+import { renderLog } from './logview';
 
 // Рендерим в физическом разрешении экрана (до 2x), чтобы на retina было чётко
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -60,17 +62,33 @@ function renderStages() {
   const ready = lobby === 'host-ready';
   $('coop-choices').classList.toggle('hidden', !ready);
   if (ready) cards('coop-choices', (p) => startCoopHost(p), { story: true, survival: true });
+  applyFeatures();
+  renderPlay();
 }
 
-type Panel = 'main' | 'story' | 'survival' | 'coop' | 'shop' | 'codex' | 'ach';
+/** Замороженные функции (src/features.ts) прячем из меню: код и прогресс остаются. */
+function applyFeatures() {
+  document.querySelectorAll<HTMLElement>('[data-feature]').forEach((el) => el.classList.toggle('hidden', !featureOn(el.dataset.feature as Feature)));
+}
+
+/** Арена, в которую ведёт «Играть»: самая дальняя из открытых. */
+function playStage() { return Math.min(loadProgress().unlocked, STAGES.length - 1); }
+
+function renderPlay() {
+  const i = playStage(), best = loadProgress().best[i];
+  $('play-sub').textContent = `Арена ${i + 1} · ${STAGES[i].name}${best ? ` · рекорд ${fmt(best)}` : ''}`;
+}
+
+type Panel = 'main' | 'story' | 'survival' | 'coop' | 'shop' | 'codex' | 'ach' | 'log';
 function showPanel(id: Panel) {
-  for (const k of ['main', 'story', 'survival', 'coop', 'shop', 'codex', 'ach']) $(`menu-${k}`).classList.toggle('hidden', k !== id);
+  for (const k of ['main', 'story', 'survival', 'coop', 'shop', 'codex', 'ach', 'log']) $(`menu-${k}`).classList.toggle('hidden', k !== id);
   $('menu-sub').classList.toggle('hidden', id !== 'main');
   document.querySelector('.tips')!.classList.toggle('hidden', id !== 'main');
   document.querySelector('.settings')!.classList.toggle('hidden', id !== 'main');
   if (id === 'shop') renderShop();
   if (id === 'codex') renderCodex();
   if (id === 'ach') renderAch();
+  if (id === 'log') renderLog();
   renderBones();
 }
 
@@ -333,6 +351,15 @@ $('set-lefty').addEventListener('click', () => { settings.lefty = !settings.left
 // Навигация меню
 document.querySelectorAll<HTMLButtonElement>('.mode, .sub').forEach((b) => b.addEventListener('click', () => { sfx.unlock(); showPanel(b.dataset.go as Panel); }));
 document.querySelectorAll<HTMLButtonElement>('.back').forEach((b) => b.addEventListener('click', () => showPanel('main')));
+// «Играть» — сразу в арену, без выбора режима; Enter на главном экране делает то же
+$('play').addEventListener('click', () => { sfx.unlock(); startSolo({ mode: 'survival', stage: playStage(), chapter: 0 }); });
+$('set-log').addEventListener('click', () => { sfx.unlock(); showPanel('log'); });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.repeat || $('start').classList.contains('hidden') || $('menu-main').classList.contains('hidden')) return;
+  const t = e.target as HTMLElement | null;
+  if (t && /^(INPUT|TEXTAREA|BUTTON)$/.test(t.tagName)) return;
+  $('play').click();
+});
 // iOS считает жестом только click/touchend/keydown (не pointerdown) — будим звук на них
 for (const ev of ['touchend', 'click', 'keydown']) document.addEventListener(ev, () => sfx.unlock(), { passive: true });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) sfx.unlock(); });

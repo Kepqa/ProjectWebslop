@@ -79,11 +79,16 @@
     <div class="tips"><span>Взмах режет</span><span>Петля собирает опыт</span><span>Джойстик — в нижнем углу</span></div>
 
     <div id="menu-main" class="modes">
-      <button class="mode" data-go="story"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V5l8-2 8 2v15M4 20h16M12 3v17M9 12h1M14 12h1"/></svg></i><b>Сюжет</b><small>4 главы · прорыв</small></button>
-      <button class="mode" data-go="survival"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20 18 6M14 4h6v6M4 4l6 6M14 14l6 6M17 20h3v-3"/></svg></i><b>Выживание</b><small>10 волн · боссы</small></button>
-      <button class="mode" data-go="coop"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3.2"/><circle cx="16.5" cy="9" r="2.6"/><path d="M2.5 20c.6-3.6 2.6-5.4 5.5-5.4s4.900 1.800 5.500 5.400M14.500 14.800c3.300-.700 6 1 6.800 5.200"/></svg></i><b>Кооп</b><small>По сети, по коду</small></button>
+      <button id="play" class="play" aria-label="Играть">
+        <span class="play-main"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg><b>Играть</b></span>
+        <small id="play-sub"></small>
+      </button>
+      <i class="modes-break" aria-hidden="true"></i>
+      <button class="mode" data-go="story" data-feature="story"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V5l8-2 8 2v15M4 20h16M12 3v17M9 12h1M14 12h1"/></svg></i><b>Сюжет</b><small>4 главы · прорыв</small></button>
+      <button class="mode" data-go="coop" data-feature="coop"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3.2"/><circle cx="16.5" cy="9" r="2.6"/><path d="M2.5 20c.6-3.6 2.6-5.4 5.5-5.4s4.900 1.800 5.500 5.400M14.500 14.800c3.300-.700 6 1 6.800 5.200"/></svg></i><b>Кооп</b><small>По сети, по коду</small></button>
     </div>
     <div id="menu-sub" class="subrow">
+      <button class="sub" data-go="survival">Арены</button>
       <button class="sub" data-go="shop">Мастерская <small id="bones-small" class="bones">0</small></button>
       <button class="sub" data-go="codex">Предметы</button>
       <button class="sub" data-go="ach">Ачивки <small id="ach-small"></small></button>
@@ -97,6 +102,21 @@
     <div id="menu-ach" class="panel hidden">
       <div class="panel-title"><button class="back">←</button>Ачивки</div>
       <div class="list" id="achs"></div>
+    </div>
+
+    <div id="menu-log" class="panel hidden">
+      <div class="panel-title"><button class="back">←</button>Журнал забегов</div>
+      <p class="log-hint">Хранится только на этом устройстве и никуда не отправляется. Покажите его, чтобы разобрать, как идёт игра.</p>
+      <div id="log-sum"></div>
+      <div class="log-actions">
+        <button id="log-copy" class="small">Копировать JSON</button>
+        <button id="log-clear" class="secondary small">Очистить</button>
+        <span id="log-note"></span>
+      </div>
+      <textarea id="log-text" class="hidden" readonly aria-label="Журнал в JSON"></textarea>
+      <div id="log-deaths"></div>
+      <details class="log-items"><summary>Карточки: показано → взято</summary><div id="log-items"></div></details>
+      <div id="log-runs"></div>
     </div>
 
     <div id="menu-shop" class="panel hidden">
@@ -113,7 +133,7 @@
     </div>
 
     <div id="menu-survival" class="panel hidden">
-      <div class="panel-title"><button class="back">←</button>Выживание</div>
+      <div class="panel-title"><button class="back">←</button>Арены</div>
       <div class="list" id="stages"></div>
     </div>
 
@@ -138,6 +158,7 @@
       <button id="set-particles" class="chip">Частицы</button>
       <button id="set-haptics" class="chip">Вибрация</button>
       <button id="set-lefty" class="chip">Левша</button>
+      <button id="set-log" class="chip nav" data-go="log">Журнал</button>
     </div>
     <div id="version"></div>
   </div>
