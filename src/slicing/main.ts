@@ -3,8 +3,9 @@ import { play as snd, unlockAudio } from './audio';
 import { BUILD, BUILD_DATE, VERSION, checkUpdate } from '../version';
 
 /**
- * Slicing Through — прототип. Один палец: тянешь и отпускаешь — ниндзя рвётся по линии и рубит всех на пути.
- * Если держать палец, время замедляется. Рывки — заряды; рывок окупается со второго убийства.
+ * Slicing Through — игра на тайминг. Ниндзя стоит в центре, враги подходят и замахиваются: вокруг врага сжимается
+ * кольцо. Свайп в сторону врага — мгновенный удар туда и обратно. Попал в окно перед его ударом — убил;
+ * рано — тебя парировали (оглушение, комбо сгорает); поздно — получил удар; взмах в пустоту — тоже оглушение.
  * Мир в своих единицах: ширина арены AW, высота AH подстраивается под экран (портрет — основной).
  */
 const $ = (id: string) => document.getElementById(id)!;
@@ -13,50 +14,76 @@ const g = cv.getContext('2d')!;
 
 // ---------- настройки ----------
 const AW = 360;
-const HERO_R = 11;
-const DASH_SPEED = 2300;  // ед/с
-const DASH_MAX = 380;     // самый длинный рывок
-const DRAG_K = 2.6;       // рывок = длина протяжки пальца × DRAG_K
-const MAX_BOUNCES = 2;    // сколько раз рывок отскакивает от стен
-const MIN_DRAG = 12;      // px экрана: короче — не рывок
-const MAX_CHARGES = 3;
-const RECHARGE = 0.7;     // с на один заряд
-const SLOW = 0.35;        // скорость времени, пока палец на экране
-const SLOW_DELAY = 120;   // мс: быстрый взмах идёт без замедления, оно включается, только если держать палец
-const BLAST_R = 70;       // радиус взрыва подрывника
-const IFRAMES = 1.2;
+const HERO_R = 12;
+const STRIKE_D = 62;        // на каком расстоянии от ниндзя враг останавливается и замахивается
+const WINDOW = 0.25;        // окно «хорошо» — последние секунды замаха
+const PERFECT = 0.1;        // окно «идеально»
+const FLICK_PX = 22;        // px: на столько провести пальцем — и удар срабатывает сразу, не дожидаясь отпускания
+const CONE = 0.8;           // рад: насколько свайп может промахнуться по направлению к цели
+const STAGGER = 0.4;        // с оглушения после парирования или взмаха в пустоту
+const IFRAMES = 1.0;
 const MAX_HP = 3;
+const HEAL_EVERY = 20;      // +1 жизнь за каждые 20 комбо
+const TURN = 1.0;           // рад: на сколько надо сменить направление пальца, чтобы росчерк ударил ещё раз
+const HOLD_MS = 250;        // держать палец неподвижно столько, чтобы включить сосредоточение
+const FOCUS_TIME = 3;       // с (реальных) сосредоточения
+const FOCUS_SLOW = 0.45;    // скорость времени во время сосредоточения
+const MASTER_EVERY = 60;    // с: мастер меча приходит раз в минуту
 
-type Kind = 'grunt' | 'bomber' | 'archer';
-interface Foe { kind: Kind; x: number; y: number; r: number; face: number; stun: number; cd: number; aim: number; aimA: number; spawn: number; dead: boolean }
-interface Arrow { x: number; y: number; vx: number; vy: number }
+type Kind = 'basic' | 'fast' | 'feint' | 'heavy' | 'archer' | 'shadow' | 'master';
+type Phase = 'spawn' | 'walk' | 'wind' | 'recover' | 'leave';
+interface Foe {
+  kind: Kind; x: number; y: number; a: number; r: number; phase: Phase; t: number; w: number;
+  fake: boolean; hp: number; shots: number; dead: boolean; flash: number;
+  blinked: boolean; pattern: number[]; idx: number;
+}
+interface Arrow { x: number; y: number; a: number; from: Foe }
 interface Part { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number }
-interface Mark { x: number; y: number; a: number; len: number }
-interface Blast { x: number; y: number; t: number }
+interface Pop { x: number; y: number; text: string; color: string; life: number }
+
+/** Скорость подхода, длина замаха (с), радиус, с какой секунды забега появляется, вес в выборе. */
+const KINDS: Record<Kind, { speed: number; wind: number; r: number; from: number; weight: number }> = {
+  basic: { speed: 75, wind: 1.0, r: 13, from: 0, weight: 4 },
+  fast: { speed: 135, wind: 0.55, r: 11, from: 15, weight: 3 },
+  archer: { speed: 60, wind: 1.1, r: 12, from: 25, weight: 2 },
+  feint: { speed: 65, wind: 0.9, r: 13, from: 35, weight: 2 },
+  heavy: { speed: 45, wind: 1.1, r: 17, from: 50, weight: 2 },
+  shadow: { speed: 80, wind: 1.1, r: 12, from: 70, weight: 2 },
+  master: { speed: 55, wind: 0.9, r: 18, from: Infinity, weight: 0 }, // приходит по расписанию, не случайно
+};
+
+/** Ритмы мастера меча (длины замахов подряд). Чем дальше этап, тем длиннее серия. */
+const MASTER_PATTERNS = [
+  [0.9, 0.45, 0.45, 0.9],
+  [0.7, 0.7, 0.35, 0.35, 1.0],
+  [1.0, 0.3, 0.3, 0.6, 0.3, 0.9],
+  [0.5, 0.5, 0.5, 0.25, 0.25, 0.8, 0.4],
+];
 
 // ---------- состояние ----------
 let AH = 640, scale = 1, ox = 0, oy = 0, dpr = 1, safeTop = 0;
-// inv — неуязвимость после урона (мигает); grace — короткая после рывка (не мигает)
-const hero = { x: AW / 2, y: 320, hp: MAX_HP, inv: 0, grace: 0, dashing: false, dx: 0, dy: -1, left: 0, kills: 0, bounces: 0 };
-let charges = MAX_CHARGES, rechargeT = 0;
-let foes: Foe[] = [], arrows: Arrow[] = [], parts: Part[] = [], marks: Mark[] = [], blasts: Blast[] = [];
-let rings: { x: number; y: number; life: number }[] = [];
-let trail: { x: number; y: number; t: number }[] = [];
-let wave = 0, queue: Kind[][] = [], spawnT = 0, breakT = 0;
-let score = 0, combo = 0, bestCombo = 0, kills = 0, clock = 0;
-let timeScale = 1, hitstop = 0, shake = 0;
-let aiming: { id: number; sx: number; sy: number; cx: number; cy: number; t0: number } | null = null;
+let cx = AW / 2, cy = 360;  // ниндзя
+const hero = { hp: MAX_HP, inv: 0, stagger: 0, slashA: 0, slashT: 0, slashD: 0, face: -Math.PI / 2 };
+let foes: Foe[] = [], arrows: Arrow[] = [], parts: Part[] = [], pops: Pop[] = [];
+let time = 0, spawnCd = 0, stage = 1;
+let score = 0, combo = 0, bestCombo = 0, kills = 0, perfects = 0;
+let slowT = 0, hitstop = 0, shake = 0, focus = 0, focusT = 0, mastersMet = 0;
+/** Палец: точка отсчёта (сдвигается вслед за пальцем), направление прошлого удара, время касания, бил ли уже. */
+let touch: { id: number; sx: number; sy: number; lastA: number | null; t0: number; struck: boolean } | null = null;
 let state: 'menu' | 'play' | 'paused' | 'over' = 'menu';
 let banner = { text: '', sub: '', t: 0 };
 let hint = '';
 const seen = new Set<Kind>();
 
-const BEST_KEY = 'slicing_best';
-function loadBest(): { score: number; wave: number } {
-  try { const b = JSON.parse(localStorage.getItem(BEST_KEY) || 'null'); if (b) return { score: +b.score || 0, wave: +b.wave || 0 }; } catch { /* ignore */ }
-  return { score: 0, wave: 0 };
+const BEST_KEY = 'slicing_best_timing';
+function loadBest(): { score: number; time: number } {
+  try { const b = JSON.parse(localStorage.getItem(BEST_KEY) || 'null'); if (b) return { score: +b.score || 0, time: +b.time || 0 }; } catch { /* ignore */ }
+  return { score: 0, time: 0 };
 }
 function buzz(p: number | number[]) { try { navigator.vibrate?.(p); } catch { /* ignore */ } }
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const angDiff = (a: number, b: number) => { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return Math.abs(d); };
+const fmtTime = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
 // ---------- экран ----------
 function resize() {
@@ -68,300 +95,280 @@ function resize() {
   AH = Math.min(vh / scale, 820);
   ox = (vw - AW * scale) / 2; oy = (vh - AH * scale) / 2;
   safeTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sat')) || 0;
-  hero.y = Math.min(hero.y, AH - HERO_R);
+  cx = AW / 2; cy = AH * 0.55;
 }
 addEventListener('resize', resize);
 resize();
 
 // ---------- забег ----------
 function newRun() {
-  Object.assign(hero, { x: AW / 2, y: AH * 0.6, hp: MAX_HP, inv: 0, grace: 0, dashing: false, left: 0, kills: 0 });
-  charges = MAX_CHARGES; rechargeT = 0;
-  foes = []; arrows = []; parts = []; marks = []; trail = []; blasts = []; rings = [];
-  wave = 0; queue = []; breakT = 0.5;
-  score = 0; combo = 0; bestCombo = 0; kills = 0; clock = 0;
-  timeScale = 1; hitstop = 0; shake = 0; aiming = null;
+  Object.assign(hero, { hp: MAX_HP, inv: 0, stagger: 0, slashT: 0 });
+  foes = []; arrows = []; parts = []; pops = [];
+  time = 0; spawnCd = 0.6; stage = 1;
+  score = 0; combo = 0; bestCombo = 0; kills = 0; perfects = 0;
+  slowT = 0; hitstop = 0; shake = 0; touch = null; focus = 0; focusT = 0; mastersMet = 0;
   seen.clear();
-  hint = 'Потяни палец в любом месте и отпусти';
+  hint = 'Свайп к врагу, когда кольцо пожелтеет';
 }
 
-/** Волна — список групп: каждая группа выходит из одной точки у края. Подрывник — в центре группы пехоты. */
-function waveList(n: number) {
-  const list: Kind[][] = [];
-  let grunts = n === 1 ? 8 : Math.min(48, 8 + n * 5);
-  while (grunts > 0) {
-    const k = Math.min(grunts, 4 + Math.floor(Math.random() * 4));
-    const pack: Kind[] = Array(k).fill('grunt');
-    if (n >= 2 && Math.random() < Math.min(0.6, 0.2 * n)) pack[0] = 'bomber';
-    list.push(pack); grunts -= k;
-  }
-  const archers = n >= 3 ? Math.min(4, Math.floor(n / 2)) : 0;
-  for (let i = 0; i < archers; i++) list.splice(1 + Math.floor(Math.random() * list.length), 0, ['archer']);
-  return list;
-}
+/** Сколько врагов держать на поле и насколько быстрее их замах — растут со временем. */
+const wanted = () => Math.min(6, 1 + Math.floor((time + 10) / 18));
+const windK = () => Math.max(0.65, 1 - time / 360);
 
-function startWave() {
-  wave++;
-  queue = waveList(wave);
-  spawnT = 0.3;
-  showBanner(`Волна ${wave}`, '');
-}
-
-function spawnGroup(kinds: Kind[]) {
-  const n = kinds.length;
-  let x = 0, y = 0;
-  for (let i = 0; i < 12; i++) {
-    const side = Math.floor(Math.random() * 4), m = 30;
-    x = side < 2 ? m + Math.random() * (AW - 2 * m) : side === 2 ? m : AW - m;
-    y = side >= 2 ? m + Math.random() * (AH - 2 * m) : side === 0 ? m : AH - m;
-    if (Math.hypot(x - hero.x, y - hero.y) > 170) break;
+function spawn(forced?: Kind) {
+  const pool = (Object.keys(KINDS) as Kind[]).filter((k) => time >= KINDS[k].from);
+  let roll = Math.random() * pool.reduce((s, k) => s + KINDS[k].weight, 0), kind: Kind = 'basic';
+  for (const k of pool) { roll -= KINDS[k].weight; if (roll <= 0) { kind = k; break; } }
+  if (forced) kind = forced;
+  // направление подальше от уже занятых, чтобы свайп однозначно выбирал цель
+  let a = 0, best = -1;
+  for (let i = 0; i < 16; i++) {
+    const c = Math.random() * Math.PI * 2;
+    const gap = Math.min(Math.PI, ...foes.filter((f) => !f.dead).map((f) => angDiff(c, f.a)));
+    if (gap > best) { best = gap; a = c; }
   }
-  for (let i = 0; i < n; i++) {
-    const kind = kinds[i];
-    const a = (i / n) * Math.PI * 2, r = i === 0 || n === 1 ? 0 : 18 + n * 2;
-    const fx = clamp(x + Math.cos(a) * r, 14, AW - 14), fy = clamp(y + Math.sin(a) * r, 14, AH - 14);
-    foes.push({ kind, x: fx, y: fy, r: kind === 'bomber' ? 13 : 12, face: Math.atan2(hero.y - fy, hero.x - fx), stun: 0,
-      cd: 1.0 + Math.random() * 0.4, aim: 0, aimA: 0, spawn: 0.6, dead: false });
-  }
-  for (const kind of kinds) if (!seen.has(kind)) {
+  const d = Math.hypot(AW, AH) / 2 + 20;
+  const x = clamp(cx + Math.cos(a) * d, 16, AW - 16), y = clamp(cy + Math.sin(a) * d, 16, AH - 16);
+  const k = KINDS[kind];
+  const pattern = kind === 'master' ? MASTER_PATTERNS[Math.min(MASTER_PATTERNS.length - 1, mastersMet)].map((w) => w * windK()) : [];
+  foes.push({ kind, x, y, a: Math.atan2(y - cy, x - cx), r: k.r, phase: 'spawn', t: 0.45, w: pattern[0] ?? k.wind * windK(),
+    fake: kind === 'feint', hp: kind === 'heavy' ? 2 : pattern.length || 1, shots: 0, dead: false, flash: 0,
+    blinked: false, pattern, idx: 0 });
+  if (!seen.has(kind)) {
     seen.add(kind);
-    if (kind === 'bomber') showBanner('Подрывник', 'Руби его в толпе — взрыв заберёт соседей');
-    if (kind === 'archer') showBanner('Лучник', 'Срезанная стрела возвращает рывок');
+    const intro: Partial<Record<Kind, [string, string]>> = {
+      fast: ['Быстрый', 'Короткий замах — реагируй сразу'],
+      archer: ['Лучник', 'Режь стрелу у лица — идеально отразит'],
+      feint: ['Ронин', 'Пунктир — обманный замах, жди второго'],
+      heavy: ['Латник', 'Бей дважды — второй замах короткий'],
+      shadow: ['Тень', 'Исчезает и бьёт с другой стороны'],
+    };
+    const t = intro[kind];
+    if (t) showBanner(t[0], t[1]);
   }
 }
 
-function showBanner(text: string, sub: string) { banner = { text, sub, t: sub ? 2.6 : 1.3 }; }
+function showBanner(text: string, sub: string) { banner = { text, sub, t: sub ? 2.4 : 1.2 }; }
+function pop(x: number, y: number, text: string, color: string) { pops.push({ x, y, text, color, life: 0.7 }); }
 
 // ---------- ввод ----------
 cv.addEventListener('pointerdown', (e) => {
   unlockAudio();
-  if (state !== 'play' || aiming) return;
-  aiming = { id: e.pointerId, sx: e.clientX, sy: e.clientY, cx: e.clientX, cy: e.clientY, t0: performance.now() };
+  if (state !== 'play' || touch) return;
+  touch = { id: e.pointerId, sx: e.clientX, sy: e.clientY, lastA: null, t0: performance.now(), struck: false };
   try { cv.setPointerCapture(e.pointerId); } catch { /* ignore */ }
 });
+/** Росчерк: первый удар — как только палец прошёл FLICK_PX; дальше, не отрывая пальца, каждый резкий поворот — ещё удар. */
 cv.addEventListener('pointermove', (e) => {
-  if (aiming && e.pointerId === aiming.id) { aiming.cx = e.clientX; aiming.cy = e.clientY; }
+  if (!touch || e.pointerId !== touch.id || state !== 'play') return;
+  const dx = e.clientX - touch.sx, dy = e.clientY - touch.sy;
+  if (Math.hypot(dx, dy) < FLICK_PX) return;
+  const a = Math.atan2(dy, dx);
+  if (touch.lastA === null || angDiff(a, touch.lastA) > TURN) { touch.struck = true; touch.lastA = a; slash(a); }
+  touch.sx = e.clientX; touch.sy = e.clientY; // точка отсчёта едет за пальцем, чтобы поворот ловился сразу
 });
-const release = (e: PointerEvent) => {
-  if (!aiming || e.pointerId !== aiming.id) return;
-  const a = aiming; aiming = null;
-  if (e.type !== 'pointerup' || state !== 'play') return;
-  const d = aimVec(a);
-  if (d && charges >= 1 && !hero.dashing) startDash(d.x, d.y, d.len);
-};
+const release = (e: PointerEvent) => { if (touch && e.pointerId === touch.id) touch = null; };
 cv.addEventListener('pointerup', release);
 cv.addEventListener('pointercancel', release);
 
-/** Направление и длина рывка по протяжке пальца; null — протяжка слишком короткая. */
-function aimVec(a: { sx: number; sy: number; cx: number; cy: number }) {
-  const px = a.cx - a.sx, py = a.cy - a.sy, l = Math.hypot(px, py);
-  if (l < MIN_DRAG) return null;
-  return { x: px / l, y: py / l, len: Math.min(DASH_MAX, (l / scale) * DRAG_K) };
+/** Палец держат неподвижно — включить сосредоточение, если шкала полна. */
+function checkHold(now: number) {
+  if (!touch || touch.struck || focus < 1 || focusT > 0 || now - touch.t0 < HOLD_MS) return;
+  focus = 0; focusT = FOCUS_TIME; touch.struck = true;
+  snd('gong', 0.5, 1.4); buzz(25);
+  pop(cx, cy - 40, 'СОСРЕДОТОЧЕНИЕ', '#9fd0ff');
+  if (hint.startsWith('Шкала')) hint = '';
 }
 
-// ---------- рывок ----------
-function startDash(dx: number, dy: number, len: number) {
-  Object.assign(hero, { dashing: true, dx, dy, left: len, kills: 0, bounces: 0 });
-  charges -= 1;
+// ---------- удар ----------
+/** Окно замаха: сколько секунд осталось до удара врага; null — бить сейчас рано (или обманный замах). */
+function windowLeft(f: Foe) {
+  if (f.phase !== 'wind' || f.fake) return null;
+  const left = f.w - f.t;
+  return left <= WINDOW ? left : null;
+}
+
+function slash(a: number) {
+  if (hero.stagger > 0) return;
+  hero.face = a;
+  // цели: стрелы рядом и враги на позиции удара, в конусе свайпа; ближайшая по углу
+  type T = { kind: 'foe'; f: Foe; d: number } | { kind: 'arrow'; ar: Arrow; d: number };
+  const cands: T[] = [];
+  for (const f of foes) if (!f.dead && (f.phase === 'wind' || f.phase === 'recover' || f.phase === 'walk') && Math.hypot(f.x - cx, f.y - cy) < STRIKE_D + 50)
+    cands.push({ kind: 'foe', f, d: angDiff(a, Math.atan2(f.y - cy, f.x - cx)) });
+  for (const ar of arrows) if (Math.hypot(ar.x - cx, ar.y - cy) < 150) cands.push({ kind: 'arrow', ar, d: angDiff(a, Math.atan2(ar.y - cy, ar.x - cx)) });
+  const tgt = cands.filter((c) => c.d < CONE).sort((p, q) => p.d - q.d)[0];
+  hero.slashA = a; hero.slashT = 0.12;
+  if (!tgt) { hero.slashD = 70; whiff('мимо'); return; }
+
+  if (tgt.kind === 'arrow') {
+    const ar = tgt.ar, d = Math.hypot(ar.x - cx, ar.y - cy);
+    hero.slashD = d;
+    if (d > 95) { whiff('рано'); return; }
+    arrows.splice(arrows.indexOf(ar), 1);
+    if (d < 50) {
+      // идеальный срез: стрела летит обратно в лучника
+      const f = ar.from;
+      if (!f.dead) { kill(f, true); pop(f.x, f.y, 'ОТРАЖЕНО', '#ffd58a'); }
+      success(ar.x, ar.y, true);
+    } else success(ar.x, ar.y, false);
+    burst(ar.x, ar.y, '#f2e3b3', 8, 160);
+    return;
+  }
+
+  const f = tgt.f;
+  hero.slashD = Math.hypot(f.x - cx, f.y - cy);
+  const left = windowLeft(f);
+  if (left === null) { parried(f); return; }
+  const perfect = left <= PERFECT;
+  if (f.hp > 1) {
+    // латник: первый удар сбивает, и он тут же замахивается коротко; мастер — следующий удар серии
+    f.hp--; f.t = 0; f.flash = 0.15;
+    if (f.kind === 'master') { f.idx++; f.w = f.pattern[f.idx % f.pattern.length]; } else f.w = 0.5 * windK();
+    snd('bounce', 0.9); burst(f.x, f.y, '#d6dce8', 10, 180);
+    success(f.x, f.y, perfect);
+    return;
+  }
+  kill(f, perfect);
+  success(f.x, f.y, perfect);
+  if (f.kind === 'master') {
+    score += 1000; slowT = 0.5; hero.hp = Math.min(MAX_HP, hero.hp + 1);
+    showBanner('Мастер повержен', '+1 жизнь · +1000'); snd('gong', 0.9);
+  }
+}
+
+function success(x: number, y: number, perfect: boolean) {
+  combo++; bestCombo = Math.max(bestCombo, combo);
+  score += Math.round((perfect ? 200 : 100) * (1 + Math.min(combo, 50) / 10));
+  focus = Math.min(1, focus + (perfect ? 0.25 : 0.08));
+  if (focus >= 1 && focusT <= 0 && !hint && mastersMet === 0 && perfects < 8) hint = 'Шкала полна: задержи палец — сосредоточение';
+  if (perfect) {
+    perfects++; slowT = 0.14; hitstop = Math.max(hitstop, 0.05); shake = Math.min(1, shake + 0.25);
+    pop(x, y - 18, 'ИДЕАЛЬНО', '#ffd58a'); snd('multi', 0.6, 1.1); buzz(14);
+  } else {
+    hitstop = Math.max(hitstop, 0.03); shake = Math.min(1, shake + 0.12);
+    pop(x, y - 18, 'хорошо', '#c9d2ea'); buzz(8);
+  }
+  if (combo % HEAL_EVERY === 0 && hero.hp < MAX_HP) { hero.hp++; showBanner(`Комбо ${combo}`, '+1 жизнь'); }
   hint = '';
-  snd('dash', 0.7);
 }
 
-function endDash() {
-  hero.dashing = false;
-  hero.grace = 0.15; // миг после рывка: не умирать от врага, в которого только что влетел
-  if (hero.kills === 0) combo = 0;
-  if (hero.kills >= 3) {
-    showBanner(`×${hero.kills}`, '');
-    hitstop = Math.max(hitstop, 0.09); shake = Math.min(1, shake + 0.4);
-    snd('multi', 0.8); buzz(16);
-  }
-  if (hero.kills === 1 && wave <= 2) hint = 'Убей двоих одним рывком — он вернётся';
+function kill(f: Foe, perfect: boolean) {
+  f.dead = true; kills++;
+  burst(f.x, f.y, '#c8243a', perfect ? 22 : 14, perfect ? 280 : 200);
+  burst(f.x, f.y, '#151018', 8, 140);
+  snd('cut', 0.85, 1 + Math.min(combo, 16) * 0.035);
 }
 
-/** Расстояние от точки до отрезка и параметр проекции t ∈ [0, 1]. */
-function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
-  const vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
-  const t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / l2));
-  return { d: Math.hypot(px - (ax + vx * t), py - (ay + vy * t)), t };
+/** Рано: враг отбил удар. Ниндзя оглушён, комбо сгорает. */
+function parried(f: Foe) {
+  hero.stagger = STAGGER; combo = 0;
+  f.flash = 0.2;
+  pop(f.x, f.y - 18, 'рано', '#ff8a7a');
+  snd('parry', 0.9); shake = Math.min(1, shake + 0.2); buzz(20);
+  if (hint) hint = 'Рано! Жди жёлтого кольца';
 }
 
-/** Путь рывка с отскоками от стен — для прицела. */
-function dashPath(x: number, y: number, dx: number, dy: number, len: number) {
-  const pts = [{ x, y }];
-  let b = 0;
-  while (len > 0.5) {
-    const tx = dx > 0 ? (AW - HERO_R - x) / dx : dx < 0 ? (HERO_R - x) / dx : Infinity;
-    const ty = dy > 0 ? (AH - HERO_R - y) / dy : dy < 0 ? (HERO_R - y) / dy : Infinity;
-    const t = Math.min(len, tx, ty);
-    x += dx * t; y += dy * t; len -= t; pts.push({ x, y });
-    if (len <= 0.5 || b >= MAX_BOUNCES) break;
-    if (t === tx) dx = -dx; else dy = -dy;
-    b++;
-  }
-  return pts;
+function whiff(text: string) {
+  hero.stagger = STAGGER; combo = 0;
+  pop(cx + Math.cos(hero.slashA) * 60, cy + Math.sin(hero.slashA) * 60, text, '#8a90a8');
+  snd('dash', 0.4, 0.8);
 }
 
-function updateDash(dt: number) {
-  let remain = Math.min(hero.left, DASH_SPEED * dt);
-  while (remain > 0 && hero.dashing) {
-    const step = Math.min(8, remain);
-    remain -= step; hero.left -= step;
-    const ax = hero.x, ay = hero.y;
-    let bx = ax + hero.dx * step, by = ay + hero.dy * step;
-    const hitX = bx < HERO_R || bx > AW - HERO_R, hitY = by < HERO_R || by > AH - HERO_R;
-    if (hitX || hitY) {
-      bx = clamp(bx, HERO_R, AW - HERO_R); by = clamp(by, HERO_R, AH - HERO_R);
-      if (hero.bounces >= MAX_BOUNCES) { hero.x = bx; hero.y = by; pushTrail(bx, by); endDash(); return; }
-      if (hitX) hero.dx = -hero.dx;
-      if (hitY) hero.dy = -hero.dy;
-      hero.bounces++;
-      burst(bx, by, '#9fb4ff', 6, 120); snd('bounce', 0.6);
-    }
-    for (const f of foes) {
-      if (f.dead || f.spawn > 0 || segDist(f.x, f.y, ax, ay, bx, by).d >= f.r + HERO_R) continue;
-      kill(f, false);
-    }
-    for (let i = arrows.length - 1; i >= 0; i--) {
-      const a = arrows[i];
-      if (segDist(a.x, a.y, ax, ay, bx, by).d < HERO_R + 6) {
-        arrows.splice(i, 1); score += 5;
-        charges = Math.min(MAX_CHARGES, charges + 1);
-        burst(a.x, a.y, '#f2e3b3', 5, 120); snd('parry', 0.7);
-      }
-    }
-    hero.x = bx; hero.y = by;
-    pushTrail(bx, by);
-  }
-  if (hero.left <= 0.01) endDash();
-}
-
-/** blast — убит взрывом подрывника: заряд возвращается всегда. */
-function kill(f: Foe, blast: boolean) {
-  f.dead = true;
-  combo++; kills++;
-  bestCombo = Math.max(bestCombo, combo);
-  score += 10 * Math.min(combo, 30);
-  if (!blast) hero.kills++;
-  if (blast || hero.kills >= 2) charges = Math.min(MAX_CHARGES, charges + 1); // рывок окупается со второго убийства
-  hitstop = Math.max(hitstop, 0.025);
-  shake = Math.min(1, shake + 0.12);
-  burst(f.x, f.y, '#c8243a', 12, 220);
-  burst(f.x, f.y, '#151018', 6, 140);
-  const a = blast ? Math.random() * Math.PI : Math.atan2(hero.dy, hero.dx);
-  marks.push({ x: f.x, y: f.y, a, len: 18 + Math.random() * 16 });
-  if (marks.length > 90) marks.shift();
-  if (f.kind === 'bomber') blasts.push({ x: f.x, y: f.y, t: 0.12 });
-  snd('cut', 0.8, 1 + Math.min(combo, 16) * 0.035);
-  buzz(7);
-}
-
-function explode(b: Blast) {
-  rings.push({ x: b.x, y: b.y, life: 0.35 });
-  burst(b.x, b.y, '#ffb347', 18, 300); burst(b.x, b.y, '#2a1a12', 10, 200);
-  shake = Math.min(1, shake + 0.5); hitstop = Math.max(hitstop, 0.05);
-  snd('boom', 1); buzz(20);
-  for (const f of foes) if (!f.dead && f.spawn <= 0 && Math.hypot(f.x - b.x, f.y - b.y) < BLAST_R + f.r) kill(f, true);
-}
-
-function pushTrail(x: number, y: number) { trail.push({ x, y, t: clock }); }
-
-// ---------- урон по герою ----------
-function hurt() {
+function hurt(from: { x: number; y: number }) {
+  if (hero.inv > 0) return;
   hero.hp--; hero.inv = IFRAMES; combo = 0;
   shake = Math.min(1, shake + 0.7); hitstop = Math.max(hitstop, 0.08);
+  burst(cx, cy, '#e8453c', 14, 200);
+  pop(from.x, from.y - 18, 'поздно', '#ff6a5a');
   snd('hurt', 1); buzz([30, 30, 20]);
-  for (const f of foes) {
-    const dx = f.x - hero.x, dy = f.y - hero.y, d = Math.hypot(dx, dy) || 1;
-    if (d < 90) { f.x += (dx / d) * (90 - d); f.y += (dy / d) * (90 - d); f.stun = Math.max(f.stun, 0.4); }
-  }
   if (hero.hp <= 0) gameOver();
 }
 
 // ---------- обновление мира ----------
 function update(dt: number) {
-  clock += dt;
+  time += dt;
   if (hero.inv > 0) hero.inv -= dt;
-  if (hero.grace > 0) hero.grace -= dt;
-  if (charges < MAX_CHARGES) {
-    rechargeT += dt;
-    if (rechargeT >= RECHARGE) { rechargeT = 0; charges++; }
-  } else rechargeT = 0;
-  if (hero.dashing) updateDash(dt);
-  for (const b of blasts) if ((b.t -= dt) <= 0) explode(b);
-  blasts = blasts.filter((b) => b.t > 0);
-  for (const r of rings) r.life -= dt;
-  rings = rings.filter((r) => r.life > 0);
-
-  // волны
-  if (breakT > 0) {
-    breakT -= dt;
-    if (breakT <= 0) startWave();
-  } else if (queue.length) {
-    spawnT -= dt;
-    if (spawnT <= 0) { spawnGroup(queue.shift()!); spawnT = wave === 1 ? 1.6 : Math.max(0.6, 1.3 - wave * 0.07); }
-  } else if (!foes.length) {
-    breakT = 1.0;
-    if (wave % 3 === 0 && hero.hp < MAX_HP) { hero.hp++; showBanner('Волна пройдена', '+1 жизнь'); }
-    else showBanner('Волна пройдена', '');
-    snd('gong', 0.6);
+  if (hero.stagger > 0) hero.stagger -= dt;
+  if (hero.slashT > 0) hero.slashT -= dt;
+  if (Math.floor(time / 30) + 1 > stage) { stage++; snd('gong', 0.6); if (time < MASTER_EVERY * (mastersMet + 1) - 1) showBanner(`Этап ${stage}`, 'Быстрее и больше врагов'); }
+  const master = foes.some((f) => f.kind === 'master' && !f.dead);
+  if (time >= MASTER_EVERY * (mastersMet + 1) && !master) {
+    spawn('master'); mastersMet++;
+    showBanner('Мастер меча', 'Серия ударов — держи ритм');
   }
 
-  // враги
-  const speedUp = Math.min(1.5, 1 + wave * 0.04);
+  const alive = foes.filter((f) => !f.dead && f.phase !== 'leave').length;
+  spawnCd -= dt;
+  // пока мастер на поле, новых врагов меньше — серия должна читаться
+  if (alive < (master ? 2 : wanted()) && spawnCd <= 0) { spawn(); spawnCd = Math.max(0.35, 1.1 - time / 200); }
+
   for (const f of foes) {
     if (f.dead) continue;
-    if (f.spawn > 0) { f.spawn -= dt; continue; }
-    const tx = hero.x - f.x, ty = hero.y - f.y, dist = Math.hypot(tx, ty) || 1;
-    const want = Math.atan2(ty, tx);
-    if (f.stun > 0) { f.stun -= dt; continue; }
-    f.face = want;
-    let sp = 0;
-    if (f.kind === 'grunt') sp = 58 * speedUp;
-    else if (f.kind === 'bomber') sp = 46 * speedUp;
-    else {
-      sp = dist > 280 ? 40 : dist < 200 ? -50 : 0;
-      if (f.aim > 0) {
-        f.aim -= dt; sp = 0;
-        if (f.aim > 0.25) f.aimA = want; // последние 0.25 с прицел замирает — можно уйти
-        if (f.aim <= 0) {
-          arrows.push({ x: f.x + Math.cos(f.aimA) * 14, y: f.y + Math.sin(f.aimA) * 14, vx: Math.cos(f.aimA) * 300, vy: Math.sin(f.aimA) * 300 });
-          f.cd = 1.7 + Math.random() * 0.6; snd('bow', 0.5);
-        }
-      } else if ((f.cd -= dt) <= 0 && dist < 420) { f.aim = 0.7; f.aimA = want; }
+    if (f.flash > 0) f.flash -= dt;
+    const dx = cx - f.x, dy = cy - f.y, d = Math.hypot(dx, dy) || 1;
+    const k = KINDS[f.kind];
+    const stopAt = f.kind === 'archer' ? 190 : STRIKE_D;
+    if (f.phase === 'spawn') { if ((f.t -= dt) <= 0) f.phase = 'walk'; continue; }
+    if (f.phase === 'walk') {
+      const step = k.speed * dt;
+      if (d - step <= stopAt) { f.x = cx - (dx / d) * stopAt; f.y = cy - (dy / d) * stopAt; f.phase = 'wind'; f.t = 0; }
+      else { f.x += (dx / d) * step; f.y += (dy / d) * step; }
+      continue;
     }
-    f.x += (tx / dist) * sp * dt; f.y += (ty / dist) * sp * dt;
-    f.x = clamp(f.x, f.r, AW - f.r); f.y = clamp(f.y, f.r, AH - f.r);
-    if (!hero.dashing && hero.inv <= 0 && hero.grace <= 0 && dist < f.r + HERO_R - 2) hurt();
-    if (state !== 'play') return;
+    if (f.phase === 'leave') {
+      f.x -= (dx / d) * 90 * dt; f.y -= (dy / d) * 90 * dt;
+      if (f.x < -30 || f.x > AW + 30 || f.y < -30 || f.y > AH + 30) f.dead = true;
+      continue;
+    }
+    if (f.phase === 'recover') {
+      if ((f.t -= dt) <= 0) { f.phase = 'wind'; f.t = 0; f.w = f.kind === 'master' ? f.pattern[f.idx % f.pattern.length] : k.wind * windK(); }
+      continue;
+    }
+    // замах
+    f.t += dt;
+    if (f.kind === 'shadow' && !f.blinked && f.t >= f.w * 0.45) {
+      // тень исчезает и продолжает замах с противоположной стороны
+      burst(f.x, f.y, '#2a1f3a', 14, 160);
+      f.x = cx - (f.x - cx); f.y = cy - (f.y - cy); f.a = Math.atan2(f.y - cy, f.x - cx); f.blinked = true;
+      burst(f.x, f.y, '#2a1f3a', 14, 160); snd('dash', 0.5, 1.3);
+    }
+    if (f.fake && f.t >= f.w * 0.75) {
+      // обманный замах обрывается — следующий настоящий
+      f.fake = false; f.t = 0; f.w = k.wind * windK();
+      continue;
+    }
+    if (f.t >= f.w) {
+      if (f.kind === 'archer') {
+        arrows.push({ x: f.x, y: f.y, a: Math.atan2(dy, dx), from: f });
+        snd('bow', 0.6);
+        f.shots++;
+        f.phase = f.shots >= 3 ? 'leave' : 'recover'; f.t = 0.9;
+      } else {
+        hurt(f);
+        if (state !== 'play') return;
+        f.phase = 'recover'; f.t = 0.7; f.fake = f.kind === 'feint'; f.blinked = false;
+        if (f.kind === 'master') { f.idx++; f.t = 0.35; }
+      }
+    }
   }
   foes = foes.filter((f) => !f.dead);
-  // толкаемся, чтобы не слипались
-  for (let i = 0; i < foes.length; i++) for (let j = i + 1; j < foes.length; j++) {
-    const a = foes[i], b = foes[j];
-    if (a.spawn > 0 || b.spawn > 0) continue;
-    const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, o = a.r + b.r - d;
-    if (o > 0) { a.x -= (dx / d) * o / 2; a.y -= (dy / d) * o / 2; b.x += (dx / d) * o / 2; b.y += (dy / d) * o / 2; }
-  }
 
-  // стрелы
   for (let i = arrows.length - 1; i >= 0; i--) {
-    const a = arrows[i];
-    a.x += a.vx * dt; a.y += a.vy * dt;
-    if (a.x < -20 || a.x > AW + 20 || a.y < -20 || a.y > AH + 20) { arrows.splice(i, 1); continue; }
-    if (!hero.dashing && hero.inv <= 0 && hero.grace <= 0 && Math.hypot(a.x - hero.x, a.y - hero.y) < HERO_R + 3) {
-      arrows.splice(i, 1); hurt();
+    const ar = arrows[i];
+    ar.x += Math.cos(ar.a) * 230 * dt; ar.y += Math.sin(ar.a) * 230 * dt;
+    if (Math.hypot(ar.x - cx, ar.y - cy) < HERO_R) {
+      arrows.splice(i, 1); hurt(ar);
       if (state !== 'play') return;
     }
   }
 
   for (const p of parts) { p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.9; p.vy *= 0.9; }
   parts = parts.filter((p) => p.life > 0);
-  trail = trail.filter((t) => clock - t.t < 0.3);
-  if (banner.t > 0) banner.t -= dt / Math.max(timeScale, 0.5);
+  for (const p of pops) { p.life -= dt; p.y -= 30 * dt; }
+  pops = pops.filter((p) => p.life > 0);
+  if (banner.t > 0) banner.t -= dt;
 }
-
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 function burst(x: number, y: number, color: string, n: number, sp: number) {
   for (let i = 0; i < n; i++) {
@@ -377,62 +384,25 @@ function draw() {
   const s = shake * shake * 7;
   g.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * (ox + (Math.random() - 0.5) * s * scale), dpr * (oy + (Math.random() - 0.5) * s * scale));
 
-  // пол: тёмные доски додзё
+  // пол: тёмные доски додзё и круг ниндзя
   g.fillStyle = '#15151f'; g.fillRect(0, 0, AW, AH);
   g.strokeStyle = '#1d1d2a'; g.lineWidth = 1;
   for (let x = 45; x < AW; x += 45) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, AH); g.stroke(); }
-  for (let i = 0; i < 14; i++) { const x = (i % 8) * 45, y = ((i * 137) % AH); g.beginPath(); g.moveTo(x, y); g.lineTo(x + 45, y); g.stroke(); }
-  // следы туши
-  g.strokeStyle = '#3a1219'; g.lineCap = 'round';
-  for (const m of marks) {
-    g.lineWidth = 5;
-    g.beginPath(); g.moveTo(m.x - Math.cos(m.a) * m.len, m.y - Math.sin(m.a) * m.len); g.lineTo(m.x + Math.cos(m.a) * m.len, m.y + Math.sin(m.a) * m.len); g.stroke();
-  }
+  g.strokeStyle = '#26263a'; g.lineWidth = 2;
+  g.beginPath(); g.arc(cx, cy, STRIKE_D, 0, Math.PI * 2); g.stroke();
 
-  // появление врагов
-  for (const f of foes) if (f.spawn > 0) {
-    g.strokeStyle = `rgba(232,69,60,${0.3 + (0.6 - f.spawn)})`; g.lineWidth = 2;
-    g.beginPath(); g.arc(f.x, f.y, f.r + f.spawn * 30, 0, Math.PI * 2); g.stroke();
+  // появление
+  for (const f of foes) if (f.phase === 'spawn') {
+    g.strokeStyle = `rgba(232,69,60,${0.6 - f.t})`; g.lineWidth = 2;
+    g.beginPath(); g.arc(f.x, f.y, f.r + f.t * 40, 0, Math.PI * 2); g.stroke();
   }
-  // прицел лучников
-  for (const f of foes) if (f.kind === 'archer' && f.aim > 0 && f.spawn <= 0) {
-    const locked = f.aim <= 0.25;
-    g.strokeStyle = locked ? 'rgba(255,80,60,0.85)' : 'rgba(255,80,60,0.3)'; g.lineWidth = locked ? 2 : 1;
-    g.setLineDash([6, 6]);
-    g.beginPath(); g.moveTo(f.x, f.y); g.lineTo(f.x + Math.cos(f.aimA) * 600, f.y + Math.sin(f.aimA) * 600); g.stroke();
-    g.setLineDash([]);
-  }
-  for (const f of foes) if (f.spawn <= 0) drawFoe(f);
+  for (const f of foes) if (f.phase !== 'spawn') drawFoe(f);
 
-  // стрелы
-  g.strokeStyle = '#f2e3b3'; g.lineWidth = 2;
-  for (const a of arrows) {
-    const l = Math.hypot(a.vx, a.vy) || 1;
-    g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(a.x - (a.vx / l) * 14, a.y - (a.vy / l) * 14); g.stroke();
-  }
-
-  // след рывка
-  if (trail.length > 1) {
-    for (let i = 1; i < trail.length; i++) {
-      const a = trail[i - 1], b = trail[i], k = 1 - (clock - b.t) / 0.3;
-      if (k <= 0) continue;
-      g.strokeStyle = `rgba(240,244,255,${k})`; g.lineWidth = 2 + k * 8;
-      g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
-    }
-  }
-
-  // прицел героя
-  if (aiming && state === 'play') {
-    const d = aimVec(aiming);
-    if (d) {
-      const ok = charges >= 1;
-      const pts = dashPath(hero.x, hero.y, d.x, d.y, d.len), end = pts[pts.length - 1];
-      g.strokeStyle = ok ? 'rgba(255,255,255,0.75)' : 'rgba(150,150,170,0.5)'; g.lineWidth = 2;
-      g.setLineDash([8, 7]);
-      g.beginPath(); g.moveTo(pts[0].x, pts[0].y); for (const p of pts) g.lineTo(p.x, p.y); g.stroke();
-      g.setLineDash([]);
-      g.beginPath(); g.arc(end.x, end.y, HERO_R, 0, Math.PI * 2); g.stroke();
-    }
+  // стрелы: в зоне среза подсвечены
+  for (const ar of arrows) {
+    const d = Math.hypot(ar.x - cx, ar.y - cy);
+    g.strokeStyle = d < 50 ? '#ffd23a' : d < 95 ? '#fff4c8' : '#c9b98a'; g.lineWidth = d < 95 ? 3 : 2;
+    g.beginPath(); g.moveTo(ar.x, ar.y); g.lineTo(ar.x - Math.cos(ar.a) * 16, ar.y - Math.sin(ar.a) * 16); g.stroke();
   }
 
   drawHero();
@@ -442,76 +412,90 @@ function draw() {
     g.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
   }
   g.globalAlpha = 1;
-  for (const r of rings) {
-    const k = r.life / 0.35;
-    g.strokeStyle = `rgba(255,190,90,${k})`; g.lineWidth = 2 + k * 6;
-    g.beginPath(); g.arc(r.x, r.y, BLAST_R * (1 - k * 0.6), 0, Math.PI * 2); g.stroke();
-  }
 
-  // замедление: холодная дымка по краям
-  if (timeScale < 0.95) {
-    const k = (1 - timeScale) / (1 - SLOW);
-    const grd = g.createRadialGradient(AW / 2, AH / 2, AH * 0.3, AW / 2, AH / 2, AH * 0.75);
-    grd.addColorStop(0, 'rgba(60,90,160,0)'); grd.addColorStop(1, `rgba(60,90,160,${0.35 * k})`);
-    g.fillStyle = grd; g.fillRect(0, 0, AW, AH);
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const p of pops) {
+    g.globalAlpha = Math.min(1, p.life * 2.5); g.fillStyle = p.color;
+    g.font = p.text === p.text.toUpperCase() ? '800 15px Unbounded, sans-serif' : '700 14px Onest, sans-serif';
+    g.fillText(p.text, p.x, p.y);
   }
+  g.globalAlpha = 1; g.textBaseline = 'alphabetic';
 
+  if (focusT > 0) { g.fillStyle = 'rgba(60,110,190,0.12)'; g.fillRect(0, 0, AW, AH); }
   if (state !== 'menu') drawHud();
 }
 
 function drawFoe(f: Foe) {
-  const body = f.kind === 'grunt' ? '#8a5a3c' : f.kind === 'bomber' ? '#7a2626' : '#4f6e48';
+  const body = { basic: '#8a5a3c', fast: '#33476e', feint: '#5e3a6e', heavy: '#5d6475', archer: '#4f6e48', shadow: '#1c1626', master: '#7a1f2a' }[f.kind];
+  const face = Math.atan2(cy - f.y, cx - f.x), c = Math.cos(face), sn = Math.sin(face);
   g.fillStyle = 'rgba(0,0,0,0.35)'; g.beginPath(); g.ellipse(f.x, f.y + f.r * 0.7, f.r, f.r * 0.4, 0, 0, Math.PI * 2); g.fill();
-  g.fillStyle = body; g.beginPath(); g.arc(f.x, f.y, f.r, 0, Math.PI * 2); g.fill();
-  // соломенная шляпа сверху
-  g.fillStyle = f.kind === 'archer' ? '#7d8f5a' : '#c9a35e';
-  g.beginPath(); g.arc(f.x, f.y, f.r * 0.62, 0, Math.PI * 2); g.fill();
-  g.fillStyle = '#00000040'; g.beginPath(); g.arc(f.x, f.y, f.r * 0.18, 0, Math.PI * 2); g.fill();
-  const c = Math.cos(f.face), sn = Math.sin(f.face);
-  if (f.kind === 'bomber') {
-    // бочонок пороха за спиной и искрящий фитиль
-    g.fillStyle = '#1a1414'; g.beginPath(); g.arc(f.x - c * 6, f.y - sn * 6, 7, 0, Math.PI * 2); g.fill();
-    g.fillStyle = Math.sin(clock * 30) > 0 ? '#ffd23a' : '#ff7a1a';
-    g.beginPath(); g.arc(f.x - c * 12, f.y - sn * 12, 2.5, 0, Math.PI * 2); g.fill();
-  } else if (f.kind === 'archer') {
-    g.strokeStyle = '#d9c08a'; g.lineWidth = 2;
-    g.beginPath(); g.arc(f.x + c * 4, f.y + sn * 4, f.r + 2, f.face - 0.9, f.face + 0.9); g.stroke();
-  } else {
-    // копьё
-    g.strokeStyle = '#b8b2a6'; g.lineWidth = 2;
-    g.beginPath(); g.moveTo(f.x + c * 4 - sn * 7, f.y + sn * 4 + c * 7); g.lineTo(f.x + c * 22 - sn * 7, f.y + sn * 22 + c * 7); g.stroke();
+  g.fillStyle = f.flash > 0 ? '#ffffff' : body; g.beginPath(); g.arc(f.x, f.y, f.r, 0, Math.PI * 2); g.fill();
+  if (f.kind === 'shadow') { g.strokeStyle = '#a58bd6'; g.lineWidth = 1.5; g.stroke(); }
+  g.fillStyle = f.kind === 'heavy' ? '#9aa3b5' : f.kind === 'archer' ? '#7d8f5a' : f.kind === 'shadow' ? '#3d3152' : f.kind === 'master' ? '#e0b44a' : '#c9a35e';
+  g.beginPath(); g.arc(f.x, f.y, f.r * 0.6, 0, Math.PI * 2); g.fill();
+  if (f.kind === 'heavy' || f.kind === 'master') {
+    const w = f.hp * 9 - 3;
+    for (let i = 0; i < f.hp; i++) { g.fillStyle = f.kind === 'master' ? '#ffd58a' : '#e8eef8'; g.fillRect(f.x - w / 2 + i * 9, f.y - f.r - 9, 6, 4); }
   }
-  if (f.stun > 0) {
-    g.fillStyle = '#ffe28a'; g.font = '700 12px Onest, sans-serif'; g.textAlign = 'center';
-    g.fillText('✦', f.x + Math.cos(clock * 8) * 9, f.y - f.r - 6);
+  // оружие поднимается во время замаха
+  const lift = f.phase === 'wind' ? Math.min(1, f.t / f.w) : 0;
+  g.strokeStyle = f.kind === 'archer' ? '#d9c08a' : '#d4d0c6'; g.lineWidth = 2.5;
+  if (f.kind === 'archer') {
+    g.beginPath(); g.arc(f.x + c * 4, f.y + sn * 4, f.r + 2, face - 0.9, face + 0.9); g.stroke();
+  } else {
+    const wa = face + (Math.PI / 2) * (1 - lift) - 0.2, len = f.kind === 'fast' ? 14 : 22;
+    g.beginPath(); g.moveTo(f.x + c * 6, f.y + sn * 6); g.lineTo(f.x + c * 6 + Math.cos(wa) * len, f.y + sn * 6 + Math.sin(wa) * len); g.stroke();
+  }
+  // кольцо замаха: сжимается к телу; в окне — жёлтое, в «идеально» — белое; обманный замах — пунктир
+  if (f.phase === 'wind') {
+    const left = f.w - f.t, k = left / f.w;
+    const inWin = left <= WINDOW && (f.fake ? left > f.w * 0.25 : true);
+    g.strokeStyle = !inWin ? 'rgba(232,69,60,0.85)' : left <= PERFECT && !f.fake ? '#ffffff' : '#ffd23a';
+    g.lineWidth = inWin ? 3.5 : 2;
+    if (f.fake) g.setLineDash([5, 5]);
+    g.beginPath(); g.arc(f.x, f.y, f.r + 4 + 34 * k, 0, Math.PI * 2); g.stroke();
+    g.setLineDash([]);
+    g.strokeStyle = 'rgba(255,255,255,0.18)'; g.lineWidth = 1;
+    g.beginPath(); g.arc(f.x, f.y, f.r + 4, 0, Math.PI * 2); g.stroke();
   }
 }
 
 function drawHero() {
   if (hero.inv > 0 && Math.floor(hero.inv * 14) % 2 === 0) return; // мигает только после урона
-  const { x, y, dx, dy } = hero;
-  g.fillStyle = 'rgba(0,0,0,0.4)'; g.beginPath(); g.ellipse(x, y + 8, 11, 4, 0, 0, Math.PI * 2); g.fill();
-  // концы красной повязки развеваются за спиной
+  // удар: ниндзя на миг уходит к цели и возвращается, за ним белый след
+  const k = hero.slashT > 0 ? Math.sin((1 - hero.slashT / 0.12) * Math.PI) : 0;
+  const reach = Math.max(0, hero.slashD - 14) * k;
+  const x = cx + Math.cos(hero.slashA) * reach, y = cy + Math.sin(hero.slashA) * reach;
+  if (hero.slashT > 0) {
+    g.strokeStyle = `rgba(240,244,255,${hero.slashT / 0.12})`; g.lineWidth = 6; g.lineCap = 'round';
+    const ex = cx + Math.cos(hero.slashA) * (hero.slashD + 10), ey = cy + Math.sin(hero.slashA) * (hero.slashD + 10);
+    g.beginPath(); g.moveTo(cx, cy); g.lineTo(ex, ey); g.stroke();
+  }
+  const dx = Math.cos(hero.face), dy = Math.sin(hero.face);
+  g.fillStyle = 'rgba(0,0,0,0.4)'; g.beginPath(); g.ellipse(x, y + 9, 12, 4, 0, 0, Math.PI * 2); g.fill();
   g.strokeStyle = '#e8453c'; g.lineWidth = 3; g.lineCap = 'round';
   for (const side of [-1, 1]) {
-    const w = Math.sin(clock * 10 + side) * 4;
+    const w = Math.sin(time * 10 + side) * 4;
     g.beginPath(); g.moveTo(x - dx * 8, y - dy * 8);
-    g.quadraticCurveTo(x - dx * 16 - dy * (side * 5 + w), y - dy * 16 + dx * (side * 5 + w), x - dx * 24 - dy * (side * 7), y - dy * 24 + dx * (side * 7));
+    g.quadraticCurveTo(x - dx * 16 - dy * (side * 5 + w), y - dy * 16 + dx * (side * 5 + w), x - dx * 24 - dy * side * 7, y - dy * 24 + dx * side * 7);
     g.stroke();
   }
-  g.fillStyle = '#0c0c12'; g.beginPath(); g.arc(x, y, HERO_R, 0, Math.PI * 2); g.fill();
-  g.strokeStyle = '#2a2a3a'; g.lineWidth = 1.5; g.stroke();
+  g.fillStyle = hero.stagger > 0 ? '#2a2236' : '#0c0c12'; g.beginPath(); g.arc(x, y, HERO_R, 0, Math.PI * 2); g.fill();
   g.strokeStyle = '#e8453c'; g.lineWidth = 3;
-  g.beginPath(); g.arc(x, y, HERO_R - 3, Math.atan2(dy, dx) - 1.3, Math.atan2(dy, dx) + 1.3); g.stroke();
-  // прорезь для глаз
+  g.beginPath(); g.arc(x, y, HERO_R - 3, hero.face - 1.3, hero.face + 1.3); g.stroke();
   g.strokeStyle = '#f4f1e8'; g.lineWidth = 2;
   g.beginPath(); g.moveTo(x + dx * 6 - dy * 4, y + dy * 6 + dx * 4); g.lineTo(x + dx * 6 + dy * 4, y + dy * 6 - dx * 4); g.stroke();
-  // заряды рывка под ниндзя
-  for (let i = 0; i < MAX_CHARGES; i++) {
-    const px = x + (i - 1) * 10, py = y + HERO_R + 9;
-    const fill = i < charges ? 1 : i === charges ? rechargeT / RECHARGE : 0;
-    g.fillStyle = '#ffffff22'; g.beginPath(); g.arc(px, py, 3.2, 0, Math.PI * 2); g.fill();
-    if (fill > 0) { g.fillStyle = i < charges ? '#f4f1e8' : '#f4f1e888'; g.beginPath(); g.arc(px, py, 3.2 * fill, 0, Math.PI * 2); g.fill(); }
+  if (hero.stagger > 0) {
+    g.fillStyle = '#ffe28a'; g.font = '700 12px Onest, sans-serif'; g.textAlign = 'center';
+    g.fillText('✦', x + Math.cos(time * 9) * 12, y - HERO_R - 6);
+  }
+  // шкала сосредоточения — дуга вокруг ниндзя; полная — пульсирует
+  if (focusT > 0) {
+    g.strokeStyle = '#9fd0ff'; g.lineWidth = 3;
+    g.beginPath(); g.arc(cx, cy, 22, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (focusT / FOCUS_TIME)); g.stroke();
+  } else if (focus > 0) {
+    g.strokeStyle = focus >= 1 ? `rgba(159,208,255,${0.6 + Math.sin(time * 8) * 0.4})` : 'rgba(159,208,255,0.45)'; g.lineWidth = 3;
+    g.beginPath(); g.arc(cx, cy, 22, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * focus); g.stroke();
   }
 }
 
@@ -521,7 +505,7 @@ function drawHud() {
   g.font = '700 18px Onest, sans-serif'; g.textAlign = 'left';
   for (let i = 0; i < MAX_HP; i++) { g.fillStyle = i < hero.hp ? '#e8453c' : '#3a3442'; g.fillText('♥', 12 + i * 20, top); }
   g.fillStyle = '#b9bfd3'; g.textAlign = 'center'; g.font = '600 13px "JetBrains Mono", monospace';
-  g.fillText(`ВОЛНА ${Math.max(1, wave)}`, AW / 2, top + 3);
+  g.fillText(`${fmtTime(time)} · ЭТАП ${stage}`, AW / 2, top + 3);
   g.textAlign = 'right'; g.fillStyle = '#eef0f7'; g.font = '700 18px "JetBrains Mono", monospace';
   g.fillText(String(score), AW - 64, top);
   if (combo >= 2) {
@@ -531,14 +515,14 @@ function drawHud() {
   if (banner.t > 0) {
     g.globalAlpha = Math.min(1, banner.t * 2);
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillStyle = '#eef0f7'; g.font = '800 28px Unbounded, sans-serif'; g.fillText(banner.text, AW / 2, AH * 0.3);
-    if (banner.sub) { g.fillStyle = '#b9bfd3'; g.font = '500 15px Onest, sans-serif'; g.fillText(banner.sub, AW / 2, AH * 0.3 + 30); }
+    g.fillStyle = '#eef0f7'; g.font = '800 26px Unbounded, sans-serif'; g.fillText(banner.text, AW / 2, AH * 0.2);
+    if (banner.sub) { g.fillStyle = '#b9bfd3'; g.font = '500 14px Onest, sans-serif'; g.fillText(banner.sub, AW / 2, AH * 0.2 + 28); }
     g.globalAlpha = 1;
   }
   if (hint) {
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.globalAlpha = 0.6 + Math.sin(clock * 4) * 0.25;
-    g.fillStyle = '#eef0f7'; g.font = '600 15px Onest, sans-serif'; g.fillText(hint, AW / 2, AH - 60);
+    g.globalAlpha = 0.6 + Math.sin(time * 4) * 0.25;
+    g.fillStyle = '#eef0f7'; g.font = '600 14px Onest, sans-serif'; g.fillText(hint, AW / 2, AH - 50);
     g.globalAlpha = 1;
   }
   g.textBaseline = 'alphabetic';
@@ -551,15 +535,15 @@ function show(id: string | null) {
 }
 function renderRecord() {
   const b = loadBest();
-  $('record').textContent = b.score ? `Рекорд: ${b.score} очков · волна ${b.wave}` : '';
+  $('record').textContent = b.score ? `Рекорд: ${b.score} очков · ${fmtTime(b.time)}` : '';
 }
 function play() { unlockAudio(); newRun(); state = 'play'; show(null); }
-function pause() { if (state !== 'play') return; state = 'paused'; aiming = null; show('paused'); }
+function pause() { if (state !== 'play') return; state = 'paused'; touch = null; show('paused'); }
 function gameOver() {
-  state = 'over'; aiming = null;
+  state = 'over'; touch = null;
   const b = loadBest(), rec = score > b.score;
-  try { localStorage.setItem(BEST_KEY, JSON.stringify({ score: Math.max(score, b.score), wave: Math.max(wave, b.wave) })); } catch { /* ignore */ }
-  $('over-sub').textContent = `Волна ${wave} · ${kills} врагов · лучшее комбо ×${bestCombo}`;
+  try { localStorage.setItem(BEST_KEY, JSON.stringify({ score: Math.max(score, b.score), time: Math.max(time, b.time) })); } catch { /* ignore */ }
+  $('over-sub').textContent = `${fmtTime(time)} · ${kills} врагов · идеально ${perfects} · лучшее комбо ×${bestCombo}`;
   $('over-rec').textContent = rec ? `Новый рекорд: ${score}!` : `${score} очков · рекорд ${b.score}`;
   snd('gong', 0.9, 0.7);
   show('over');
@@ -597,10 +581,11 @@ let last = performance.now();
 function frame(now: number) {
   const rdt = Math.min(0.05, (now - last) / 1000); last = now;
   if (state === 'play') {
-    const slow = aiming && now - aiming.t0 > SLOW_DELAY;
-    timeScale += ((slow ? SLOW : 1) - timeScale) * Math.min(1, rdt * 18);
+    checkHold(now);
+    if (slowT > 0) slowT -= rdt;
+    if (focusT > 0) focusT -= rdt;
     if (hitstop > 0) hitstop -= rdt;
-    else update(rdt * timeScale);
+    else update(rdt * (slowT > 0 ? 0.3 : focusT > 0 ? FOCUS_SLOW : 1));
     shake = Math.max(0, shake - rdt * 1.8);
   }
   draw();
