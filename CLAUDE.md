@@ -9,6 +9,7 @@ Deploy: GitHub Pages (`.github/workflows/pages.yml`, `npm run build` → `dist`)
 - `survivors/index.html` + `src/*.ts` — Swipe Survivors. Точка входа `src/main.ts`,
   основная логика в `src/GameScene.ts` (~3000 строк: ищи нужное через grep, не читай целиком)
 - `duel/index.html` + `src/duel/` — «Дуэль»
+- `gladiatorial/index.html` + `src/gladiatorial/` — «Гладиаторы» (перенесена из github.com/Ualadislav/gladiatorial, картинки в `assets/`)
 - Новая игра = своя HTML-страница + вход в `rollupOptions.input` в `vite.config.ts`
 
 ## Команды
