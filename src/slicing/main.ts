@@ -14,8 +14,9 @@ const g = cv.getContext('2d')!;
 const AW = 360;
 const HERO_R = 11;
 const DASH_SPEED = 1500;  // ед/с
-const DASH_MAX = 250;     // самый длинный рывок
-const DRAG_K = 2.2;       // рывок = длина протяжки пальца × DRAG_K
+const DASH_MAX = 380;     // самый длинный рывок
+const DRAG_K = 2.6;       // рывок = длина протяжки пальца × DRAG_K
+const MAX_BOUNCES = 2;    // сколько раз рывок отскакивает от стен
 const MIN_DRAG = 12;      // px экрана: короче — не рывок
 const MAX_CHARGES = 3;
 const RECHARGE = 1.1;     // с на один заряд
@@ -31,11 +32,11 @@ interface Mark { x: number; y: number; a: number; len: number }
 
 // ---------- состояние ----------
 let AH = 640, scale = 1, ox = 0, oy = 0, dpr = 1, safeTop = 0;
-const hero = { x: AW / 2, y: 320, hp: MAX_HP, inv: 0, dashing: false, dx: 0, dy: -1, left: 0, kills: 0 };
+const hero = { x: AW / 2, y: 320, hp: MAX_HP, inv: 0, dashing: false, dx: 0, dy: -1, left: 0, kills: 0, bounces: 0 };
 let charges = MAX_CHARGES, rechargeT = 0;
 let foes: Foe[] = [], arrows: Arrow[] = [], parts: Part[] = [], marks: Mark[] = [];
 let trail: { x: number; y: number; t: number }[] = [];
-let wave = 0, queue: Kind[] = [], spawnT = 0, breakT = 0;
+let wave = 0, queue: { kind: Kind; n: number }[] = [], spawnT = 0, breakT = 0;
 let score = 0, combo = 0, bestCombo = 0, kills = 0, clock = 0;
 let timeScale = 1, hitstop = 0, shake = 0;
 let aiming: { id: number; sx: number; sy: number; cx: number; cy: number } | null = null;
@@ -78,14 +79,15 @@ function newRun() {
   hint = 'Потяни палец в любом месте и отпусти';
 }
 
-function waveList(n: number): Kind[] {
-  const list: Kind[] = [];
-  const grunts = n === 1 ? 3 : Math.min(24, 2 + n * 2);
-  const shields = n >= 3 ? Math.min(6, n - 2) : 0;
-  const archers = n >= 4 ? Math.min(5, Math.floor((n - 2) / 2)) : 0;
-  for (let i = 0; i < grunts; i++) list.push('grunt');
-  for (let i = 0; i < shields; i++) list.splice(2 + Math.floor(Math.random() * (list.length - 1)), 0, 'shield');
-  for (let i = 0; i < archers; i++) list.splice(2 + Math.floor(Math.random() * (list.length - 1)), 0, 'archer');
+/** Волна — список групп: каждая группа выходит из одной точки у края. */
+function waveList(n: number) {
+  const list: { kind: Kind; n: number }[] = [];
+  let grunts = n === 1 ? 6 : Math.min(40, 6 + n * 4);
+  while (grunts > 0) { const k = Math.min(grunts, 3 + Math.floor(Math.random() * 4)); list.push({ kind: 'grunt', n: k }); grunts -= k; }
+  const shields = n >= 2 ? Math.min(6, n - 1) : 0;
+  const archers = n >= 3 ? Math.min(4, Math.floor(n / 2)) : 0;
+  for (let i = 0; i < shields; i++) list.splice(1 + Math.floor(Math.random() * list.length), 0, { kind: 'shield', n: 1 });
+  for (let i = 0; i < archers; i++) list.splice(1 + Math.floor(Math.random() * list.length), 0, { kind: 'archer', n: 1 });
   return list;
 }
 
@@ -96,20 +98,24 @@ function startWave() {
   showBanner(`Волна ${wave}`, '');
 }
 
-function spawnFoe(kind: Kind) {
+function spawnGroup(kind: Kind, n: number) {
   let x = 0, y = 0;
   for (let i = 0; i < 12; i++) {
-    const side = Math.floor(Math.random() * 4), m = 22;
+    const side = Math.floor(Math.random() * 4), m = 30;
     x = side < 2 ? m + Math.random() * (AW - 2 * m) : side === 2 ? m : AW - m;
     y = side >= 2 ? m + Math.random() * (AH - 2 * m) : side === 0 ? m : AH - m;
-    if (Math.hypot(x - hero.x, y - hero.y) > 150) break;
+    if (Math.hypot(x - hero.x, y - hero.y) > 170) break;
   }
-  foes.push({ kind, x, y, r: kind === 'shield' ? 14 : 12, face: Math.atan2(hero.y - y, hero.x - x), stun: 0,
-    cd: 1.5 + Math.random(), aim: 0, aimA: 0, spawn: 0.6, dead: false });
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2, r = n > 1 ? 16 + n * 3 : 0;
+    const fx = clamp(x + Math.cos(a) * r, 14, AW - 14), fy = clamp(y + Math.sin(a) * r, 14, AH - 14);
+    foes.push({ kind, x: fx, y: fy, r: kind === 'shield' ? 14 : 12, face: Math.atan2(hero.y - fy, hero.x - fx), stun: 0,
+      cd: 1.0 + Math.random() * 0.4, aim: 0, aimA: 0, spawn: 0.6, dead: false });
+  }
   if (!seen.has(kind)) {
     seen.add(kind);
-    if (kind === 'shield') showBanner('Щитоносец', 'В лоб не пробить — заходи сбоку или со спины');
-    if (kind === 'archer') showBanner('Лучник', 'Стрелу можно срезать рывком');
+    if (kind === 'shield') showBanner('Щитоносец', 'Спереди держит удар — бей сбоку или рикошетом в спину');
+    if (kind === 'archer') showBanner('Лучник', 'Срезанная стрела возвращает рывок');
   }
 }
 
@@ -144,7 +150,7 @@ function aimVec(a: { sx: number; sy: number; cx: number; cy: number }) {
 
 // ---------- рывок ----------
 function startDash(dx: number, dy: number, len: number) {
-  Object.assign(hero, { dashing: true, dx, dy, left: len, kills: 0 });
+  Object.assign(hero, { dashing: true, dx, dy, left: len, kills: 0, bounces: 0 });
   charges -= 1;
   hint = '';
   sfx.play('slice', 0.9);
@@ -159,7 +165,7 @@ function endDash() {
     hitstop = Math.max(hitstop, 0.09); shake = Math.min(1, shake + 0.4);
     buzz(16);
   }
-  if (hero.kills > 0 && wave === 1 && kills <= 2) hint = 'Убийство возвращает рывок — режь цепочкой';
+  if (hero.kills === 1 && wave <= 2) hint = 'Убей двоих одним рывком — он вернётся';
 }
 
 /** Расстояние от точки до отрезка и параметр проекции t ∈ [0, 1]. */
@@ -169,45 +175,65 @@ function segDist(px: number, py: number, ax: number, ay: number, bx: number, by:
   return { d: Math.hypot(px - (ax + vx * t), py - (ay + vy * t)), t };
 }
 
-function updateDash(dt: number) {
-  const step = Math.min(hero.left, DASH_SPEED * dt);
-  const ax = hero.x, ay = hero.y;
-  let bx = ax + hero.dx * step, by = ay + hero.dy * step;
-  const wall = bx < HERO_R || bx > AW - HERO_R || by < HERO_R || by > AH - HERO_R;
-  bx = clamp(bx, HERO_R, AW - HERO_R); by = clamp(by, HERO_R, AH - HERO_R);
+/** Путь рывка с отскоками от стен — для прицела. */
+function dashPath(x: number, y: number, dx: number, dy: number, len: number) {
+  const pts = [{ x, y }];
+  let b = 0;
+  while (len > 0.5) {
+    const tx = dx > 0 ? (AW - HERO_R - x) / dx : dx < 0 ? (HERO_R - x) / dx : Infinity;
+    const ty = dy > 0 ? (AH - HERO_R - y) / dy : dy < 0 ? (HERO_R - y) / dy : Infinity;
+    const t = Math.min(len, tx, ty);
+    x += dx * t; y += dy * t; len -= t; pts.push({ x, y });
+    if (len <= 0.5 || b >= MAX_BOUNCES) break;
+    if (t === tx) dx = -dx; else dy = -dy;
+    b++;
+  }
+  return pts;
+}
 
-  const hits: { f: Foe; t: number }[] = [];
-  for (const f of foes) {
-    if (f.dead || f.spawn > 0) continue;
-    const s = segDist(f.x, f.y, ax, ay, bx, by);
-    if (s.d < f.r + HERO_R) hits.push({ f, t: s.t });
-  }
-  hits.sort((p, q) => p.t - q.t);
-  for (const { f, t } of hits) {
-    const front = hero.dx * Math.cos(f.face) + hero.dy * Math.sin(f.face) < -0.35;
-    if (f.kind === 'shield' && f.stun <= 0 && front) {
-      // удар в щит: рывок обрывается, щитоносец оглушён и открыт с любой стороны
-      bx = ax + (bx - ax) * t - hero.dx * (f.r + HERO_R) * 0.5; by = ay + (by - ay) * t - hero.dy * (f.r + HERO_R) * 0.5;
+function updateDash(dt: number) {
+  let remain = Math.min(hero.left, DASH_SPEED * dt);
+  while (remain > 0 && hero.dashing) {
+    const step = Math.min(8, remain);
+    remain -= step; hero.left -= step;
+    const ax = hero.x, ay = hero.y;
+    let bx = ax + hero.dx * step, by = ay + hero.dy * step;
+    const hitX = bx < HERO_R || bx > AW - HERO_R, hitY = by < HERO_R || by > AH - HERO_R;
+    if (hitX || hitY) {
       bx = clamp(bx, HERO_R, AW - HERO_R); by = clamp(by, HERO_R, AH - HERO_R);
-      f.stun = 1.1; f.x += hero.dx * 18; f.y += hero.dy * 18;
-      burst(f.x - hero.dx * f.r, f.y - hero.dy * f.r, '#e9eef8', 8, 160);
-      sfx.play('clank'); shake = Math.min(1, shake + 0.35); buzz(12);
-      pushTrail(bx, by); hero.x = bx; hero.y = by; hero.left = 0;
-      endDash();
-      return;
+      if (hero.bounces >= MAX_BOUNCES) { hero.x = bx; hero.y = by; pushTrail(bx, by); endDash(); return; }
+      if (hitX) hero.dx = -hero.dx;
+      if (hitY) hero.dy = -hero.dy;
+      hero.bounces++;
+      burst(bx, by, '#9fb4ff', 6, 120); sfx.play('land', 0.6);
     }
-    kill(f);
-  }
-  for (let i = arrows.length - 1; i >= 0; i--) {
-    const a = arrows[i];
-    if (segDist(a.x, a.y, ax, ay, bx, by).d < HERO_R + 6) {
-      arrows.splice(i, 1); score += 5;
-      burst(a.x, a.y, '#f2e3b3', 5, 120); sfx.play('pop', 0.7);
+    for (const f of foes) {
+      if (f.dead || f.spawn > 0 || segDist(f.x, f.y, ax, ay, bx, by).d >= f.r + HERO_R) continue;
+      const front = hero.dx * Math.cos(f.face) + hero.dy * Math.sin(f.face) < -0.35;
+      if (f.kind === 'shield' && front) {
+        // удар в щит: рывок обрывается, ниндзя отбрасывает, комбо сгорает
+        hero.x = clamp(ax - hero.dx * 22, HERO_R, AW - HERO_R); hero.y = clamp(ay - hero.dy * 22, HERO_R, AH - HERO_R);
+        f.x += hero.dx * 10; f.y += hero.dy * 10;
+        burst(f.x - hero.dx * f.r, f.y - hero.dy * f.r, '#e9eef8', 8, 160);
+        sfx.play('clank'); shake = Math.min(1, shake + 0.35); buzz(12);
+        combo = 0; pushTrail(hero.x, hero.y); hero.left = 0;
+        endDash();
+        return;
+      }
+      kill(f);
     }
+    for (let i = arrows.length - 1; i >= 0; i--) {
+      const a = arrows[i];
+      if (segDist(a.x, a.y, ax, ay, bx, by).d < HERO_R + 6) {
+        arrows.splice(i, 1); score += 5;
+        charges = Math.min(MAX_CHARGES, charges + 1);
+        burst(a.x, a.y, '#f2e3b3', 5, 120); sfx.play('pop', 0.7);
+      }
+    }
+    hero.x = bx; hero.y = by;
+    pushTrail(bx, by);
   }
-  pushTrail(bx, by);
-  hero.x = bx; hero.y = by; hero.left -= step;
-  if (hero.left <= 0.01 || wall) endDash();
+  if (hero.left <= 0.01) endDash();
 }
 
 function kill(f: Foe) {
@@ -215,7 +241,7 @@ function kill(f: Foe) {
   combo++; kills++; hero.kills++;
   bestCombo = Math.max(bestCombo, combo);
   score += 10 * Math.min(combo, 30);
-  charges = Math.min(MAX_CHARGES, charges + 1);
+  if (hero.kills >= 2) charges = Math.min(MAX_CHARGES, charges + 1); // рывок окупается со второго убийства
   hitstop = Math.max(hitstop, 0.025);
   shake = Math.min(1, shake + 0.12);
   burst(f.x, f.y, '#c8243a', 12, 220);
@@ -256,7 +282,7 @@ function update(dt: number) {
     if (breakT <= 0) startWave();
   } else if (queue.length) {
     spawnT -= dt;
-    if (spawnT <= 0) { spawnFoe(queue.shift()!); spawnT = wave === 1 ? 1.4 : Math.max(0.3, 0.95 - wave * 0.05); }
+    if (spawnT <= 0) { const q = queue.shift()!; spawnGroup(q.kind, q.n); spawnT = wave === 1 ? 2.2 : Math.max(0.8, 1.8 - wave * 0.08); }
   } else if (!foes.length) {
     breakT = 1.8;
     if (wave % 3 === 0 && hero.hp < MAX_HP) { hero.hp++; showBanner('Волна пройдена', '+1 жизнь'); sfx.play('heal'); }
@@ -273,20 +299,20 @@ function update(dt: number) {
     const want = Math.atan2(ty, tx);
     if (f.stun > 0) { f.stun -= dt; continue; }
     // щитоносец поворачивается медленно — после рывка мимо него есть окно, чтобы зайти со спины
-    f.face = f.kind === 'shield' ? turn(f.face, want, 2.0 * dt) : want;
+    f.face = f.kind === 'shield' ? turn(f.face, want, 1.6 * dt) : want;
     let sp = 0;
     if (f.kind === 'grunt') sp = 44 * speedUp;
     else if (f.kind === 'shield') sp = 30 * speedUp;
     else {
-      sp = dist > 230 ? 40 : dist < 150 ? -36 : 0;
+      sp = dist > 280 ? 40 : dist < 200 ? -50 : 0;
       if (f.aim > 0) {
         f.aim -= dt; sp = 0;
         if (f.aim > 0.25) f.aimA = want; // последние 0.25 с прицел замирает — можно уйти
         if (f.aim <= 0) {
-          arrows.push({ x: f.x + Math.cos(f.aimA) * 14, y: f.y + Math.sin(f.aimA) * 14, vx: Math.cos(f.aimA) * 270, vy: Math.sin(f.aimA) * 270 });
-          f.cd = 2.4 + Math.random() * 1.2; sfx.play('throw', 0.6);
+          arrows.push({ x: f.x + Math.cos(f.aimA) * 14, y: f.y + Math.sin(f.aimA) * 14, vx: Math.cos(f.aimA) * 300, vy: Math.sin(f.aimA) * 300 });
+          f.cd = 1.7 + Math.random() * 0.6; sfx.play('throw', 0.6);
         }
-      } else if ((f.cd -= dt) <= 0 && dist < 360) { f.aim = 0.8; f.aimA = want; }
+      } else if ((f.cd -= dt) <= 0 && dist < 420) { f.aim = 0.7; f.aimA = want; }
     }
     f.x += (tx / dist) * sp * dt; f.y += (ty / dist) * sp * dt;
     f.x = clamp(f.x, f.r, AW - f.r); f.y = clamp(f.y, f.r, AH - f.r);
@@ -390,12 +416,12 @@ function draw() {
     const d = aimVec(aiming);
     if (d) {
       const ok = charges >= 1;
-      const ex = clamp(hero.x + d.x * d.len, HERO_R, AW - HERO_R), ey = clamp(hero.y + d.y * d.len, HERO_R, AH - HERO_R);
+      const pts = dashPath(hero.x, hero.y, d.x, d.y, d.len), end = pts[pts.length - 1];
       g.strokeStyle = ok ? 'rgba(255,255,255,0.75)' : 'rgba(150,150,170,0.5)'; g.lineWidth = 2;
       g.setLineDash([8, 7]);
-      g.beginPath(); g.moveTo(hero.x, hero.y); g.lineTo(ex, ey); g.stroke();
+      g.beginPath(); g.moveTo(pts[0].x, pts[0].y); for (const p of pts) g.lineTo(p.x, p.y); g.stroke();
       g.setLineDash([]);
-      g.beginPath(); g.arc(ex, ey, HERO_R, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.arc(end.x, end.y, HERO_R, 0, Math.PI * 2); g.stroke();
     }
   }
 
