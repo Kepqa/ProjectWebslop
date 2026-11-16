@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#11110f" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="screen-orientation" content="portrait" />
+    <meta name="description" content="Выйди на арену. Чувствуй тайминг. Стань чемпионом." />
+    <title>Гладиаторы — арена ждёт</title>
+    <style>
+      /* Блок ландшафта только на телефонах, не на десктопе с низкой высотой окна. */
+      @media screen and (orientation: landscape) and (max-width: 900px) and (pointer: coarse) {
+        html, body { overflow: hidden; }
+        #app { display: none !important; }
+        #rotate-lock {
+          display: grid !important;
+          place-items: center;
+          position: fixed; inset: 0;
+          background: #11110f;
+          color: #e6c482;
+          font: 600 16px/1.4 system-ui, sans-serif;
+          text-align: center;
+          padding: 24px;
+          z-index: 99999;
+        }
+      }
+      #rotate-lock { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="rotate-lock" aria-live="polite">Поверни телефон вертикально</div>
+    <div id="app"></div>
+    <script type="module" src="../src/gladiatorial/main.ts"></script>
+  </body>
+</html>

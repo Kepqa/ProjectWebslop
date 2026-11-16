@@ -22,6 +22,7 @@ export default defineConfig({
         hub: fileURLToPath(new URL('./index.html', import.meta.url)),
         survivors: fileURLToPath(new URL('./survivors/index.html', import.meta.url)),
         duel: fileURLToPath(new URL('./duel/index.html', import.meta.url)),
+        gladiatorial: fileURLToPath(new URL('./gladiatorial/index.html', import.meta.url)),
       },
     },
   },
