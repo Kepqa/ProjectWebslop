@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0b0d16" />
+  <title>Slicing Through</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&family=Onest:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" />
+</head>
+<body>
+  <canvas id="cv"></canvas>
+  <button id="pause" class="hidden" aria-label="Пауза">⏸</button>
+
+  <div id="menu" class="ov">
+    <a class="back" href="../">← Все игры</a>
+    <h1>Slicing<br />Through</h1>
+    <p class="sub">Один палец — один клинок. Ниндзя прорубает путь сквозь толпу.</p>
+    <button id="go" class="go">Играть</button>
+    <div id="record" class="record"></div>
+    <ul class="how">
+      <li><b>Потяни палец</b> в любом месте и отпусти — ниндзя рванёт в ту сторону и разрубит всех на пути.</li>
+      <li>Пока палец на экране, <b>время почти стоит</b>: спокойно целься.</li>
+      <li>Рывков три, они копятся сами. <b>Каждое убийство возвращает рывок</b> — режь цепочкой. Промах сбрасывает комбо.</li>
+      <li>Щитоносца в лоб не взять — заходи сбоку или со спины. Стрелы срезаются рывком.</li>
+    </ul>
+  </div>
+
+  <div id="paused" class="ov hidden">
+    <h2>Пауза</h2>
+    <button id="resume" class="go">Продолжить</button>
+    <button id="to-menu" class="ghost">В меню</button>
+  </div>
+
+  <div id="over" class="ov hidden">
+    <h2>Ниндзя пал</h2>
+    <p id="over-sub" class="sub"></p>
+    <div id="over-rec" class="record"></div>
+    <button id="again" class="go">Ещё раз</button>
+    <button id="over-menu" class="ghost">В меню</button>
+  </div>
+
+  <script type="module" src="../src/slicing/main.ts"></script>
+</body>
+</html>

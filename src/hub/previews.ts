@@ -126,7 +126,50 @@ function figure(c: CanvasRenderingContext2D, x: number, y: number, s: number, f:
   c.restore();
 }
 
-const SCENES: Record<string, () => Draw> = { survivors, duel };
+// ---------- Slicing Through: ниндзя рывками прорубает цепочку врагов ----------
+function slicing(): Draw {
+  const foes = Array.from({ length: 7 }, (_, i) => ({ a: i * 0.9, r: 0.3 + (i % 3) * 0.08, dead: -9 }));
+  let hx = 0.5, hy = 0.5, fromX = 0.5, fromY = 0.5, toX = 0.5, toY = 0.5, last = -1;
+  const trail: { x: number; y: number; t: number }[] = [];
+  return (c, w, h, t) => {
+    c.fillStyle = '#15151f'; c.fillRect(0, 0, w, h);
+    c.strokeStyle = '#1d1d2a'; c.lineWidth = 1;
+    for (let x = 30; x < w; x += 30) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke(); }
+    const pos = (f: typeof foes[0], tt: number) => ({ x: 0.5 + Math.cos(f.a + tt * 0.25) * f.r, y: 0.5 + Math.sin(f.a + tt * 0.25) * f.r * 0.9 });
+    // рывок раз в 0.8 с к ближайшему живому врагу
+    const step = Math.floor(t / 0.8);
+    if (step !== last) {
+      last = step;
+      const alive = foes.filter((f) => t - f.dead > 1.2);
+      const tgt = alive[step % Math.max(1, alive.length)];
+      if (tgt) { const p = pos(tgt, t); fromX = hx; fromY = hy; toX = p.x + (p.x - hx) * 0.25; toY = p.y + (p.y - hy) * 0.25; tgt.dead = t; }
+    }
+    const k = Math.min(1, (t % 0.8) / 0.15);
+    hx = fromX + (toX - fromX) * k; hy = fromY + (toY - fromY) * k;
+    if (k < 1) trail.push({ x: hx * w, y: hy * h, t });
+    while (trail.length && t - trail[0].t > 0.3) trail.shift();
+    c.lineCap = 'round';
+    for (let i = 1; i < trail.length; i++) {
+      const q = 1 - (t - trail[i].t) / 0.3;
+      c.strokeStyle = `rgba(240,244,255,${q})`; c.lineWidth = 2 + q * 6;
+      c.beginPath(); c.moveTo(trail[i - 1].x, trail[i - 1].y); c.lineTo(trail[i].x, trail[i].y); c.stroke();
+    }
+    for (const f of foes) {
+      const p = pos(f, t), x = p.x * w, y = p.y * h, since = t - f.dead;
+      if (since >= 0 && since < 0.4) {
+        c.fillStyle = '#c8243a';
+        for (let j = 0; j < 6; j++) c.fillRect(x + Math.cos(j) * since * 70, y + Math.sin(j * 1.7) * since * 70, 3, 3);
+      }
+      if (since < 1.2) continue;
+      c.fillStyle = '#8a5a3c'; c.beginPath(); c.arc(x, y, 9, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#c9a35e'; c.beginPath(); c.arc(x, y, 5.5, 0, Math.PI * 2); c.fill();
+    }
+    c.fillStyle = '#0c0c12'; c.beginPath(); c.arc(hx * w, hy * h, 9, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = '#e8453c'; c.lineWidth = 3; c.beginPath(); c.arc(hx * w, hy * h, 6, 0, Math.PI * 2); c.stroke();
+  };
+}
+
+const SCENES: Record<string, () => Draw> = { survivors, duel, slicing };
 
 export function startPreviews() {
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
