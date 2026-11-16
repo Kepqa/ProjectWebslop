@@ -1,5 +1,6 @@
 import './slicing.css';
 import { sfx } from '../sfx';
+import { BUILD, BUILD_DATE, VERSION, checkUpdate } from '../version';
 
 /**
  * Slicing Through — прототип. Один палец: тянешь и отпускаешь — ниндзя рвётся по линии и рубит всех на пути.
@@ -563,6 +564,20 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) pause
 
 renderRecord();
 show('menu');
+
+// версия сборки и проверка, не вышла ли новая (страница могла открыться из кэша)
+$('ver').textContent = `v${VERSION} · ${BUILD.split('+')[1]} · ${BUILD_DATE}`;
+$('pause-ver').textContent = `v${VERSION}`;
+const pollUpdate = async () => {
+  const v = await checkUpdate();
+  if (!v) return;
+  const el = $('update');
+  el.textContent = `🔄 Вышла версия ${v} — нажми, чтобы обновить`;
+  el.classList.remove('hidden');
+  el.onclick = () => location.reload();
+};
+void pollUpdate();
+setInterval(() => { if (state === 'menu' || state === 'over') void pollUpdate(); }, 120000);
 
 let last = performance.now();
 function frame(now: number) {
