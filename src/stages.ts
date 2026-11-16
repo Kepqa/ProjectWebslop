@@ -2,7 +2,7 @@ import type { ZType } from './textures';
 import type { GenOpts, Palette } from './world';
 import type { AmbientKind } from './ambient';
 
-export const STAGE_TIME = 600; // 10 минут — уровень пройден
+export const STAGE_TIME = 420; // 7 минут — уровень пройден
 
 export interface StageDef {
   name: string;
