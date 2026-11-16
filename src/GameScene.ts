@@ -2760,7 +2760,7 @@ export class GameScene extends Phaser.Scene {
       { label: '+5 таранов', fn: spawnN('charger', 5) },
       { label: '+5 плевунов', fn: spawnN('spitter', 5) },
       { label: '+1 минута', fn: () => { this.elapsed += 60; } },
-      { label: 'К Стражу (−1:31)', fn: () => { this.elapsed = Math.max(this.elapsed, this.stageTime - 91); } },
+      { label: 'К Стражу (за 0:31)', fn: () => { this.elapsed = Math.max(this.elapsed, (this.stageTime * (WAVES - 1)) / WAVES - 31); } },
       { label: 'Победа', fn: () => { if (!this.over) this.victory(); } },
       { label: '+500 🦴', fn: () => { addBones(500); this.hud.toast('+500 костей'); } },
       { label: 'Статистика ↻', fn: refreshStats },
