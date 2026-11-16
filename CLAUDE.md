@@ -1,7 +1,7 @@
 # Swipe Survivors — хаб мини-игр
 
 Stack: TypeScript + Vite 6 + Phaser 3.90 | Мобилки: Capacitor 8 | Мультиплеер: PeerJS
-Deploy: GitHub Pages (`.github/workflows/pages.yml`, `npm run build` → `dist`)
+Deploy: GitHub Pages — сам после мержа в `main` (`.github/workflows/pages.yml`)
 Общение, комментарии, коммиты, CHANGELOG — на русском.
 
 ## Структура
@@ -16,10 +16,10 @@ Deploy: GitHub Pages (`.github/workflows/pages.yml`, `npm run build` → `dist`)
 - `npm run build` — проверка типов + сборка. Запускать перед каждым коммитом
 - `npm run dev` — dev-сервер. Тестов нет: изменения проверяй сборкой и запуском
 
-## Релизы
-- Версия по SemVer в `package.json`. На заметное для игрока изменение — поднять версию
-  и добавить запись в `CHANGELOG.md` (формат как в предыдущих записях, коротко, языком игрока)
-- Сообщение коммита: `0.X.Y: что изменилось`
+## Ветки и релизы
+Правила — в `CONTRIBUTING.md`: PR в `main`, версия и CHANGELOG поднимаются перед мержем, на изменение
+не для игрока версию не поднимать. Сообщение коммита с версией: `0.X.Y: что изменилось`.
+Подробности игр — `survivors/README.md`, `duel/README.md`.
 
 ## Как работать
 - Думай до кода: неясно — спроси, допущения называй явно
