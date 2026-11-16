@@ -24,12 +24,18 @@ const STAGGER = 0.4;        // с оглушения после парирова
 const IFRAMES = 1.0;
 const MAX_HP = 3;
 const HEAL_EVERY = 20;      // +1 жизнь за каждые 20 комбо
+const TURN = 1.0;           // рад: на сколько надо сменить направление пальца, чтобы росчерк ударил ещё раз
+const HOLD_MS = 250;        // держать палец неподвижно столько, чтобы включить сосредоточение
+const FOCUS_TIME = 3;       // с (реальных) сосредоточения
+const FOCUS_SLOW = 0.45;    // скорость времени во время сосредоточения
+const MASTER_EVERY = 60;    // с: мастер меча приходит раз в минуту
 
-type Kind = 'basic' | 'fast' | 'feint' | 'heavy' | 'archer';
+type Kind = 'basic' | 'fast' | 'feint' | 'heavy' | 'archer' | 'shadow' | 'master';
 type Phase = 'spawn' | 'walk' | 'wind' | 'recover' | 'leave';
 interface Foe {
   kind: Kind; x: number; y: number; a: number; r: number; phase: Phase; t: number; w: number;
   fake: boolean; hp: number; shots: number; dead: boolean; flash: number;
+  blinked: boolean; pattern: number[]; idx: number;
 }
 interface Arrow { x: number; y: number; a: number; from: Foe }
 interface Part { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number }
@@ -42,7 +48,17 @@ const KINDS: Record<Kind, { speed: number; wind: number; r: number; from: number
   archer: { speed: 60, wind: 1.1, r: 12, from: 25, weight: 2 },
   feint: { speed: 65, wind: 0.9, r: 13, from: 35, weight: 2 },
   heavy: { speed: 45, wind: 1.1, r: 17, from: 50, weight: 2 },
+  shadow: { speed: 80, wind: 1.1, r: 12, from: 70, weight: 2 },
+  master: { speed: 55, wind: 0.9, r: 18, from: Infinity, weight: 0 }, // приходит по расписанию, не случайно
 };
+
+/** Ритмы мастера меча (длины замахов подряд). Чем дальше этап, тем длиннее серия. */
+const MASTER_PATTERNS = [
+  [0.9, 0.45, 0.45, 0.9],
+  [0.7, 0.7, 0.35, 0.35, 1.0],
+  [1.0, 0.3, 0.3, 0.6, 0.3, 0.9],
+  [0.5, 0.5, 0.5, 0.25, 0.25, 0.8, 0.4],
+];
 
 // ---------- состояние ----------
 let AH = 640, scale = 1, ox = 0, oy = 0, dpr = 1, safeTop = 0;
@@ -51,8 +67,9 @@ const hero = { hp: MAX_HP, inv: 0, stagger: 0, slashA: 0, slashT: 0, slashD: 0, 
 let foes: Foe[] = [], arrows: Arrow[] = [], parts: Part[] = [], pops: Pop[] = [];
 let time = 0, spawnCd = 0, stage = 1;
 let score = 0, combo = 0, bestCombo = 0, kills = 0, perfects = 0;
-let slowT = 0, hitstop = 0, shake = 0;
-let touch: { id: number; sx: number; sy: number; done: boolean } | null = null;
+let slowT = 0, hitstop = 0, shake = 0, focus = 0, focusT = 0, mastersMet = 0;
+/** Палец: точка отсчёта (сдвигается вслед за пальцем), направление прошлого удара, время касания, бил ли уже. */
+let touch: { id: number; sx: number; sy: number; lastA: number | null; t0: number; struck: boolean } | null = null;
 let state: 'menu' | 'play' | 'paused' | 'over' = 'menu';
 let banner = { text: '', sub: '', t: 0 };
 let hint = '';
@@ -89,7 +106,7 @@ function newRun() {
   foes = []; arrows = []; parts = []; pops = [];
   time = 0; spawnCd = 0.6; stage = 1;
   score = 0; combo = 0; bestCombo = 0; kills = 0; perfects = 0;
-  slowT = 0; hitstop = 0; shake = 0; touch = null;
+  slowT = 0; hitstop = 0; shake = 0; touch = null; focus = 0; focusT = 0; mastersMet = 0;
   seen.clear();
   hint = 'Свайп к врагу, когда кольцо пожелтеет';
 }
@@ -98,10 +115,11 @@ function newRun() {
 const wanted = () => Math.min(6, 1 + Math.floor((time + 10) / 18));
 const windK = () => Math.max(0.65, 1 - time / 360);
 
-function spawn() {
+function spawn(forced?: Kind) {
   const pool = (Object.keys(KINDS) as Kind[]).filter((k) => time >= KINDS[k].from);
   let roll = Math.random() * pool.reduce((s, k) => s + KINDS[k].weight, 0), kind: Kind = 'basic';
   for (const k of pool) { roll -= KINDS[k].weight; if (roll <= 0) { kind = k; break; } }
+  if (forced) kind = forced;
   // направление подальше от уже занятых, чтобы свайп однозначно выбирал цель
   let a = 0, best = -1;
   for (let i = 0; i < 16; i++) {
@@ -112,15 +130,18 @@ function spawn() {
   const d = Math.hypot(AW, AH) / 2 + 20;
   const x = clamp(cx + Math.cos(a) * d, 16, AW - 16), y = clamp(cy + Math.sin(a) * d, 16, AH - 16);
   const k = KINDS[kind];
-  foes.push({ kind, x, y, a: Math.atan2(y - cy, x - cx), r: k.r, phase: 'spawn', t: 0.45, w: k.wind * windK(),
-    fake: kind === 'feint', hp: kind === 'heavy' ? 2 : 1, shots: 0, dead: false, flash: 0 });
+  const pattern = kind === 'master' ? MASTER_PATTERNS[Math.min(MASTER_PATTERNS.length - 1, mastersMet)].map((w) => w * windK()) : [];
+  foes.push({ kind, x, y, a: Math.atan2(y - cy, x - cx), r: k.r, phase: 'spawn', t: 0.45, w: pattern[0] ?? k.wind * windK(),
+    fake: kind === 'feint', hp: kind === 'heavy' ? 2 : pattern.length || 1, shots: 0, dead: false, flash: 0,
+    blinked: false, pattern, idx: 0 });
   if (!seen.has(kind)) {
     seen.add(kind);
     const intro: Partial<Record<Kind, [string, string]>> = {
       fast: ['Быстрый', 'Короткий замах — реагируй сразу'],
-      archer: ['Лучник', 'Режь стрелу у самого лица. Идеально — и она летит обратно'],
-      feint: ['Ронин', 'Пунктирное кольцо — обманный замах. Жди второго'],
-      heavy: ['Латник', 'Два удара: после первого он сразу замахивается снова'],
+      archer: ['Лучник', 'Режь стрелу у лица — идеально отразит'],
+      feint: ['Ронин', 'Пунктир — обманный замах, жди второго'],
+      heavy: ['Латник', 'Бей дважды — второй замах короткий'],
+      shadow: ['Тень', 'Исчезает и бьёт с другой стороны'],
     };
     const t = intro[kind];
     if (t) showBanner(t[0], t[1]);
@@ -134,17 +155,30 @@ function pop(x: number, y: number, text: string, color: string) { pops.push({ x,
 cv.addEventListener('pointerdown', (e) => {
   unlockAudio();
   if (state !== 'play' || touch) return;
-  touch = { id: e.pointerId, sx: e.clientX, sy: e.clientY, done: false };
+  touch = { id: e.pointerId, sx: e.clientX, sy: e.clientY, lastA: null, t0: performance.now(), struck: false };
   try { cv.setPointerCapture(e.pointerId); } catch { /* ignore */ }
 });
+/** Росчерк: первый удар — как только палец прошёл FLICK_PX; дальше, не отрывая пальца, каждый резкий поворот — ещё удар. */
 cv.addEventListener('pointermove', (e) => {
-  if (!touch || e.pointerId !== touch.id || touch.done || state !== 'play') return;
+  if (!touch || e.pointerId !== touch.id || state !== 'play') return;
   const dx = e.clientX - touch.sx, dy = e.clientY - touch.sy;
-  if (Math.hypot(dx, dy) >= FLICK_PX) { touch.done = true; slash(Math.atan2(dy, dx)); }
+  if (Math.hypot(dx, dy) < FLICK_PX) return;
+  const a = Math.atan2(dy, dx);
+  if (touch.lastA === null || angDiff(a, touch.lastA) > TURN) { touch.struck = true; touch.lastA = a; slash(a); }
+  touch.sx = e.clientX; touch.sy = e.clientY; // точка отсчёта едет за пальцем, чтобы поворот ловился сразу
 });
 const release = (e: PointerEvent) => { if (touch && e.pointerId === touch.id) touch = null; };
 cv.addEventListener('pointerup', release);
 cv.addEventListener('pointercancel', release);
+
+/** Палец держат неподвижно — включить сосредоточение, если шкала полна. */
+function checkHold(now: number) {
+  if (!touch || touch.struck || focus < 1 || focusT > 0 || now - touch.t0 < HOLD_MS) return;
+  focus = 0; focusT = FOCUS_TIME; touch.struck = true;
+  snd('gong', 0.5, 1.4); buzz(25);
+  pop(cx, cy - 40, 'СОСРЕДОТОЧЕНИЕ', '#9fd0ff');
+  if (hint.startsWith('Шкала')) hint = '';
+}
 
 // ---------- удар ----------
 /** Окно замаха: сколько секунд осталось до удара врага; null — бить сейчас рано (или обманный замах). */
@@ -188,19 +222,26 @@ function slash(a: number) {
   if (left === null) { parried(f); return; }
   const perfect = left <= PERFECT;
   if (f.hp > 1) {
-    // латник: первый удар сбивает, и он тут же замахивается коротко
-    f.hp--; f.t = 0; f.w = 0.5 * windK(); f.flash = 0.15;
+    // латник: первый удар сбивает, и он тут же замахивается коротко; мастер — следующий удар серии
+    f.hp--; f.t = 0; f.flash = 0.15;
+    if (f.kind === 'master') { f.idx++; f.w = f.pattern[f.idx % f.pattern.length]; } else f.w = 0.5 * windK();
     snd('bounce', 0.9); burst(f.x, f.y, '#d6dce8', 10, 180);
     success(f.x, f.y, perfect);
     return;
   }
   kill(f, perfect);
   success(f.x, f.y, perfect);
+  if (f.kind === 'master') {
+    score += 1000; slowT = 0.5; hero.hp = Math.min(MAX_HP, hero.hp + 1);
+    showBanner('Мастер повержен', '+1 жизнь · +1000'); snd('gong', 0.9);
+  }
 }
 
 function success(x: number, y: number, perfect: boolean) {
   combo++; bestCombo = Math.max(bestCombo, combo);
   score += Math.round((perfect ? 200 : 100) * (1 + Math.min(combo, 50) / 10));
+  focus = Math.min(1, focus + (perfect ? 0.25 : 0.08));
+  if (focus >= 1 && focusT <= 0 && !hint && mastersMet === 0 && perfects < 8) hint = 'Шкала полна: задержи палец — сосредоточение';
   if (perfect) {
     perfects++; slowT = 0.14; hitstop = Math.max(hitstop, 0.05); shake = Math.min(1, shake + 0.25);
     pop(x, y - 18, 'ИДЕАЛЬНО', '#ffd58a'); snd('multi', 0.6, 1.1); buzz(14);
@@ -250,11 +291,17 @@ function update(dt: number) {
   if (hero.inv > 0) hero.inv -= dt;
   if (hero.stagger > 0) hero.stagger -= dt;
   if (hero.slashT > 0) hero.slashT -= dt;
-  if (Math.floor(time / 30) + 1 > stage) { stage++; showBanner(`Этап ${stage}`, 'Быстрее и больше врагов'); snd('gong', 0.6); }
+  if (Math.floor(time / 30) + 1 > stage) { stage++; snd('gong', 0.6); if (time < MASTER_EVERY * (mastersMet + 1) - 1) showBanner(`Этап ${stage}`, 'Быстрее и больше врагов'); }
+  const master = foes.some((f) => f.kind === 'master' && !f.dead);
+  if (time >= MASTER_EVERY * (mastersMet + 1) && !master) {
+    spawn('master'); mastersMet++;
+    showBanner('Мастер меча', 'Серия ударов — держи ритм');
+  }
 
   const alive = foes.filter((f) => !f.dead && f.phase !== 'leave').length;
   spawnCd -= dt;
-  if (alive < wanted() && spawnCd <= 0) { spawn(); spawnCd = Math.max(0.35, 1.1 - time / 200); }
+  // пока мастер на поле, новых врагов меньше — серия должна читаться
+  if (alive < (master ? 2 : wanted()) && spawnCd <= 0) { spawn(); spawnCd = Math.max(0.35, 1.1 - time / 200); }
 
   for (const f of foes) {
     if (f.dead) continue;
@@ -274,9 +321,18 @@ function update(dt: number) {
       if (f.x < -30 || f.x > AW + 30 || f.y < -30 || f.y > AH + 30) f.dead = true;
       continue;
     }
-    if (f.phase === 'recover') { if ((f.t -= dt) <= 0) { f.phase = 'wind'; f.t = 0; f.w = k.wind * windK(); } continue; }
+    if (f.phase === 'recover') {
+      if ((f.t -= dt) <= 0) { f.phase = 'wind'; f.t = 0; f.w = f.kind === 'master' ? f.pattern[f.idx % f.pattern.length] : k.wind * windK(); }
+      continue;
+    }
     // замах
     f.t += dt;
+    if (f.kind === 'shadow' && !f.blinked && f.t >= f.w * 0.45) {
+      // тень исчезает и продолжает замах с противоположной стороны
+      burst(f.x, f.y, '#2a1f3a', 14, 160);
+      f.x = cx - (f.x - cx); f.y = cy - (f.y - cy); f.a = Math.atan2(f.y - cy, f.x - cx); f.blinked = true;
+      burst(f.x, f.y, '#2a1f3a', 14, 160); snd('dash', 0.5, 1.3);
+    }
     if (f.fake && f.t >= f.w * 0.75) {
       // обманный замах обрывается — следующий настоящий
       f.fake = false; f.t = 0; f.w = k.wind * windK();
@@ -291,7 +347,8 @@ function update(dt: number) {
       } else {
         hurt(f);
         if (state !== 'play') return;
-        f.phase = 'recover'; f.t = 0.7; f.fake = f.kind === 'feint';
+        f.phase = 'recover'; f.t = 0.7; f.fake = f.kind === 'feint'; f.blinked = false;
+        if (f.kind === 'master') { f.idx++; f.t = 0.35; }
       }
     }
   }
@@ -359,23 +416,26 @@ function draw() {
   g.textAlign = 'center'; g.textBaseline = 'middle';
   for (const p of pops) {
     g.globalAlpha = Math.min(1, p.life * 2.5); g.fillStyle = p.color;
-    g.font = p.text === 'ИДЕАЛЬНО' || p.text === 'ОТРАЖЕНО' ? '800 15px Unbounded, sans-serif' : '700 14px Onest, sans-serif';
+    g.font = p.text === p.text.toUpperCase() ? '800 15px Unbounded, sans-serif' : '700 14px Onest, sans-serif';
     g.fillText(p.text, p.x, p.y);
   }
   g.globalAlpha = 1; g.textBaseline = 'alphabetic';
 
+  if (focusT > 0) { g.fillStyle = 'rgba(60,110,190,0.12)'; g.fillRect(0, 0, AW, AH); }
   if (state !== 'menu') drawHud();
 }
 
 function drawFoe(f: Foe) {
-  const body = { basic: '#8a5a3c', fast: '#33476e', feint: '#5e3a6e', heavy: '#5d6475', archer: '#4f6e48' }[f.kind];
+  const body = { basic: '#8a5a3c', fast: '#33476e', feint: '#5e3a6e', heavy: '#5d6475', archer: '#4f6e48', shadow: '#1c1626', master: '#7a1f2a' }[f.kind];
   const face = Math.atan2(cy - f.y, cx - f.x), c = Math.cos(face), sn = Math.sin(face);
   g.fillStyle = 'rgba(0,0,0,0.35)'; g.beginPath(); g.ellipse(f.x, f.y + f.r * 0.7, f.r, f.r * 0.4, 0, 0, Math.PI * 2); g.fill();
   g.fillStyle = f.flash > 0 ? '#ffffff' : body; g.beginPath(); g.arc(f.x, f.y, f.r, 0, Math.PI * 2); g.fill();
-  g.fillStyle = f.kind === 'heavy' ? '#9aa3b5' : f.kind === 'archer' ? '#7d8f5a' : '#c9a35e';
+  if (f.kind === 'shadow') { g.strokeStyle = '#a58bd6'; g.lineWidth = 1.5; g.stroke(); }
+  g.fillStyle = f.kind === 'heavy' ? '#9aa3b5' : f.kind === 'archer' ? '#7d8f5a' : f.kind === 'shadow' ? '#3d3152' : f.kind === 'master' ? '#e0b44a' : '#c9a35e';
   g.beginPath(); g.arc(f.x, f.y, f.r * 0.6, 0, Math.PI * 2); g.fill();
-  if (f.kind === 'heavy') {
-    for (let i = 0; i < f.hp; i++) { g.fillStyle = '#e8eef8'; g.fillRect(f.x - 7 + i * 9, f.y - f.r - 9, 6, 4); }
+  if (f.kind === 'heavy' || f.kind === 'master') {
+    const w = f.hp * 9 - 3;
+    for (let i = 0; i < f.hp; i++) { g.fillStyle = f.kind === 'master' ? '#ffd58a' : '#e8eef8'; g.fillRect(f.x - w / 2 + i * 9, f.y - f.r - 9, 6, 4); }
   }
   // оружие поднимается во время замаха
   const lift = f.phase === 'wind' ? Math.min(1, f.t / f.w) : 0;
@@ -428,6 +488,14 @@ function drawHero() {
   if (hero.stagger > 0) {
     g.fillStyle = '#ffe28a'; g.font = '700 12px Onest, sans-serif'; g.textAlign = 'center';
     g.fillText('✦', x + Math.cos(time * 9) * 12, y - HERO_R - 6);
+  }
+  // шкала сосредоточения — дуга вокруг ниндзя; полная — пульсирует
+  if (focusT > 0) {
+    g.strokeStyle = '#9fd0ff'; g.lineWidth = 3;
+    g.beginPath(); g.arc(cx, cy, 22, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (focusT / FOCUS_TIME)); g.stroke();
+  } else if (focus > 0) {
+    g.strokeStyle = focus >= 1 ? `rgba(159,208,255,${0.6 + Math.sin(time * 8) * 0.4})` : 'rgba(159,208,255,0.45)'; g.lineWidth = 3;
+    g.beginPath(); g.arc(cx, cy, 22, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * focus); g.stroke();
   }
 }
 
@@ -513,9 +581,11 @@ let last = performance.now();
 function frame(now: number) {
   const rdt = Math.min(0.05, (now - last) / 1000); last = now;
   if (state === 'play') {
+    checkHold(now);
     if (slowT > 0) slowT -= rdt;
+    if (focusT > 0) focusT -= rdt;
     if (hitstop > 0) hitstop -= rdt;
-    else update(rdt * (slowT > 0 ? 0.3 : 1));
+    else update(rdt * (slowT > 0 ? 0.3 : focusT > 0 ? FOCUS_SLOW : 1));
     shake = Math.max(0, shake - rdt * 1.8);
   }
   draw();
